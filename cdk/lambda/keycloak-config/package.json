@@ -1,0 +1,23 @@
+{
+  "name": "keycloak-config-lambda",
+  "version": "1.0.0",
+  "description": "Lambda function for configuring Keycloak auth server after deployment",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint ."
+  },
+  "author": "Amazon Web Services",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "axios": "^1.5.1",
+    "aws-sdk": "^2.1473.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "jest": "^30.0.5",
+    "eslint": "^9.32.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "projectName": "MyProject",
+  "account": "123456789012",
+  "region": "us-east-1",
+  "isProd": false,
+  "vpcId": "vpc-1234567890abcdef0",
+  "domain": {
+    "hostname": "auth.example.com",
+    "internetFacing": true,
+    "hostedZoneId": "",
+    "certificateArn": ""
+  },
+  "database": {
+    "instanceType": "r5.large"
+  },
+  "keycloak": {
+    "adminUsername": "keycloak",
+    "keycloakImage": "quay.io/keycloak/keycloak:latest",
+    "container": {
+      "cpu": 4096,
+      "memory": 8192,
+      "minCount": 2,
+      "maxCount": 10,
+      "cpuUtilizationTarget": 75,
+      "javaOpts": "-server -Xms1024m -Xmx1638m"
+    }
+  }
+}

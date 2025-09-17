@@ -1,0 +1,64 @@
+# This workflow performs code quality checks and security scanning
+
+name: cdk
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'cdk/**'
+      - '.github/workflows/cdk.yml'
+      - '.pre-commit-config.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: cdk/package-lock.json
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Install CDK dependencies
+        run: cd cdk && npm ci || exit 1
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: quality-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install pre-commit
+        run: pip install pre-commit
+      - name: Install Docker (for ASH)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          sudo usermod -a -G docker $USER
+      - name: Run ASH Security Scan
+        run: |
+          # Run ASH security scanning
+          pre-commit run --hook-stage manual ash
+      - name: Upload ASH Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ash-security-results
+          path: aggregated_results.txt
+          retention-days: 30

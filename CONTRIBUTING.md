@@ -1,59 +1,83 @@
-# Contributing Guidelines
+# Contributing to OSML Auth Server
 
-Thank you for your interest in contributing to our project. Whether it's a bug report, new feature, correction, or additional
-documentation, we greatly value feedback and contributions from our community.
-
-Please read through this document before submitting any issues or pull requests to ensure we have all the necessary
-information to effectively respond to your bug report or contribution.
-
-
-## Reporting Bugs/Feature Requests
-
-We welcome you to use the GitHub issue tracker to report bugs or suggest features.
-
-When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already
-reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
-
-* A reproducible test case or series of steps
-* The version of our code being used
-* Any modifications you've made relevant to the bug
-* Anything unusual about your environment or deployment
-
-
-## Contributing via Pull Requests
-Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
-
-1. You are working against the latest source on the *main* branch.
-2. You check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
-3. You open an issue to discuss any significant work - we would hate for your time to be wasted.
-
-To send us a pull request, please:
-
-1. Fork the repository.
-2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages.
-5. Send us a pull request, answering any default questions in the pull request interface.
-6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
-
-GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
-[creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
-
-
-## Finding contributions to work on
-Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
-
+We welcome contributions to the OSML Auth Server project! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
-This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
-For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
-opensource-codeofconduct@amazon.com with any additional questions or comments.
 
+This project adheres to the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
 
-## Security issue notifications
-If you discover a potential security issue in this project we ask that you notify AWS/Amazon Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/). Please do **not** create a public github issue.
+## How to Contribute
 
+### Reporting Issues
 
-## Licensing
+- Ensure the bug was not already reported by searching on GitHub under [Issues](https://github.com/your-organization/osml-auth-server/issues)
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/your-organization/osml-auth-server/issues/new)
+- Include a title and clear description, as much relevant information as possible, and a code sample or executable test case demonstrating the expected behavior that is not occurring
 
-See the [LICENSE](LICENSE) file for our project's licensing. We will ask you to confirm the licensing of your contribution.
+### Submitting Changes
+
+1. Fork the repository
+2. Create a new branch (`git checkout -b feature/your-feature-name`)
+3. Make your changes
+4. Run tests to ensure your changes don't break existing functionality
+5. Commit your changes (`git commit -am 'Add some feature'`)
+6. Push to the branch (`git push origin feature/your-feature-name`)
+7. Create a new Pull Request
+
+### Pull Request Process
+
+1. Update the README.md or other documentation with details of changes, if applicable
+2. Update the version numbers in any examples files and the README.md to the new version that this Pull Request would represent
+3. The PR must pass all CI/CD checks before it will be merged
+4. A maintainer will review your PR and provide feedback or approve it for merging
+
+## Development Environment
+
+### Prerequisites
+
+- Node.js (v18 or higher)
+- AWS CDK v2
+- AWS CLI configured with appropriate permissions
+
+### Setup
+
+1. Clone the repository
+2. Install dependencies:
+```
+cd cdk
+npm install
+```
+
+### Testing
+
+Run tests with:
+```
+cd cdk
+npm test
+```
+
+### Linting
+
+Run linting checks with:
+```
+cd cdk
+npm run lint
+```
+
+Format code with:
+```
+cd cdk
+npm run format
+```
+
+## Coding Guidelines
+
+- Follow the TypeScript coding style used in the project
+- Write meaningful commit messages
+- Include comments and documentation for new code
+- Write tests for new functionality
+- Use the pre-commit hooks to ensure code quality
+
+## License
+
+By contributing to this project, you agree that your contributions will be licensed under the project's [Apache License 2.0](LICENSE).

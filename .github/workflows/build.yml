@@ -1,0 +1,11 @@
+name: build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  cdk-checks:
+    uses: ./.github/workflows/cdk.yml
+    secrets: inherit

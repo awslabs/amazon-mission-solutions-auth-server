@@ -1,0 +1,62 @@
+# CDK
+cdk.context.json
+cdk-outputs.json
+.cdk.staging
+**/cdk.out/
+
+# Dependencies
+**/node_modules/
+**/dist/
+**/.build/
+**/.env
+**/coverage/
+
+# TypeScript compiler
+**/*.tsbuildinfo
+**/*.js
+!**/jest.config.js
+!**/eslint.config.mjs
+**/*.d.ts
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+**/.nyc_output
+**/coverage/
+**/junit.xml
+
+# Secrets and config
+**/.env
+**/.envrc
+**/*.pem
+**/local.settings.json
+
+# Misc
+.DS_Store
+*~
+
+# Configuration files (use example files as templates)
+cdk/config/app-config.json
+cdk/config/auth-config.json
+
+# Documentation - exclude certain file types but include images and markdown
+docs/**/*.tmp
+docs/**/*.log
+docs/**/.DS_Store
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.gif
+!docs/**/*.svg
+!docs/**/*.md
