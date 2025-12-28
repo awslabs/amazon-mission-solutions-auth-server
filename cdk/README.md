@@ -4,7 +4,12 @@ This directory contains the AWS CDK (Cloud Development Kit) code for deploying t
 
 ## Overview
 
-The Auth Server uses AWS CDK to define and deploy all required infrastructure for running a Keycloak authentication server. This includes:
+The Auth Server uses AWS CDK to define and deploy all required infrastructure for running a Keycloak authentication server. The infrastructure is organized into two separate stacks following OSML repository patterns:
+
+- **NetworkStack** (`${projectName}-Network`): VPC and networking infrastructure
+- **AuthServerStack** (`${projectName}-Dataplane`): Application resources including database, ECS service, and Lambda
+
+### Infrastructure Components
 
 - Amazon VPC with public and private subnets (or import existing VPC)
 - Aurora MySQL RDS database
@@ -13,24 +18,35 @@ The Auth Server uses AWS CDK to define and deploy all required infrastructure fo
 - Lambda function for automating Keycloak configuration
 - Secrets Manager secrets for credential management
 - Route 53 records for custom domains (optional)
+- VPC Flow Logs (retention varies by environment)
 
 ## Project Structure
 
 ```
 cdk/
-├── bin/                 # CDK app entry point
-├── lib/                 # Core CDK constructs and stacks
-│   ├── config/          # Configuration handling
-│   ├── constructs/      # Custom CDK constructs
-│   └── utils/           # Utility functions
-├── config/              # Configuration files
-│   ├── app-config.example.json     # Application configuration template
-│   └── auth-config.example.json    # Keycloak realm configuration template
-├── lambda/              # Lambda function code
-│   └── keycloak-config/ # Keycloak configuration Lambda
-├── test/                # Jest tests for CDK constructs
-├── cdk.json             # CDK configuration
-└── package.json         # Node.js dependencies
+├── bin/                          # CDK app entry point
+│   ├── app.ts                    # Main CDK application
+│   └── deployment/               # Deployment configuration
+│       ├── deployment.json       # Your deployment config (create from example)
+│       ├── deployment.json.example
+│       └── load-deployment.ts    # Configuration loader with validation
+├── lib/                          # Core CDK constructs and stacks
+│   ├── auth-server-stack.ts      # AuthServerStack (Dataplane)
+│   ├── network-stack.ts          # NetworkStack
+│   ├── constructs/               # Custom CDK constructs
+│   │   ├── auth-server/          # Auth server specific constructs
+│   │   │   ├── database.ts       # Aurora MySQL database
+│   │   │   ├── dataplane.ts      # Dataplane construct
+│   │   │   ├── keycloak-config.ts # Keycloak configuration Lambda
+│   │   │   ├── keycloak-service.ts # ECS Fargate service
+│   │   │   └── network.ts        # Network construct
+│   │   └── types.ts              # Shared types (OSMLAccount, BaseConfig)
+│   └── utils/                    # Utility functions
+├── lambda/                       # Lambda function code
+│   └── keycloak-config/          # Keycloak configuration Lambda
+├── test/                         # Jest tests for CDK constructs
+├── cdk.json                      # CDK configuration
+└── package.json                  # Node.js dependencies
 ```
 
 ## Getting Started
@@ -43,7 +59,7 @@ cdk/
 - **AWS CDK** 2.207.0+ installed (`npm install -g aws-cdk@^2.207.0`)
 - **Docker** (optional, for local Lambda testing)
 
-### Installation
+### Quick Start
 
 1. Install dependencies:
 
@@ -52,9 +68,15 @@ cd cdk
 npm install
 ```
 
-2. Configure your deployment by editing configuration files. See the Configuration section below for detailed instructions.
+2. Create your deployment configuration:
 
-3. Deploy the stack:
+```bash
+cp bin/deployment/deployment.json.example bin/deployment/deployment.json
+```
+
+3. Update `deployment.json` with your environment settings
+
+4. Deploy the stacks:
 
 ```bash
 npm run deploy
@@ -62,360 +84,573 @@ npm run deploy
 
 ## Configuration
 
-The project uses a hierarchical configuration system with two main configuration files:
+All configuration is managed through a single file: `bin/deployment/deployment.json`. This includes infrastructure settings, account configuration, and optional Keycloak realm/client/user setup.
 
-### Configuration Hierarchy
-
-1. **Application Configuration** (`config/app-config.json`): Infrastructure settings
-2. **Authentication Configuration** (`config/auth-config.json`): Optional, post-install Keycloak settings
-
-### Default Behavior (Fresh Keycloak Install)
-
-By default, without any `auth-config.json` file, the deployment creates:
-- A fresh Keycloak installation with only the master realm
-- Master realm admin user (configurable username, defaults to "keycloak")
-- Admin credentials stored in AWS Secrets Manager
-
-This gives you a clean Keycloak server that you can configure manually through the admin console.
-
-### Application Configuration (`config/app-config.json`)
-
-Copy and customize the example configuration:
-
-```bash
-cp config/app-config.example.json config/app-config.json
-```
-
-Complete configuration example:
+### Complete Configuration Example
 
 ```json
 {
-  "projectName": "MyProject",
-  "account": "123456789012",
-  "region": "us-east-1",
-  "isProd": false,
-  "vpcId": "vpc-1234567890abcdef0",
-  "domain": {
-    "hostname": "auth.example.com",
-    "internetFacing": true,
-    "hostedZoneId": "Z1234567890",
-    "certificateArn": "arn:aws:acm:region:account-id:certificate/certificate-id",
+  "projectName": "MyAuthServer",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": false,
+    "isAdc": false
   },
-  "database": {
-    "instanceType": "r5.large"
+  "networkConfig": {
+    "VPC_NAME": "auth-server-vpc",
+    "MAX_AZS": 2,
+    "SECURITY_GROUP_NAME": "auth-server-security-group"
   },
-  "keycloak": {
-    "adminUsername": "keycloak",
-    "keycloakImage": "quay.io/keycloak/keycloak:26.0.7",
-    "container": {
-      "cpu": 4096,
-      "memory": 8192,
-      "minCount": 2,
-      "maxCount": 10,
-      "cpuUtilizationTarget": 75,
-      "javaOpts": "-server -Xms1024m -Xmx1638m"
+  "dataplaneConfig": {
+    "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:latest",
+    "KEYCLOAK_ADMIN_USERNAME": "keycloak",
+    "ECS_TASK_CPU": 4096,
+    "ECS_TASK_MEMORY": 8192,
+    "ECS_MIN_CONTAINERS": 2,
+    "ECS_MAX_CONTAINERS": 10,
+    "ECS_CPU_UTILIZATION_TARGET": 75,
+    "JAVA_OPTS": "-server -Xms1024m -Xmx1638m",
+    "DATABASE_INSTANCE_TYPE": "r5.large",
+    "DOMAIN_INTERNET_FACING": true,
+    "DOMAIN_HOSTED_ZONE_ID": "Z0123456789ABCDEFGHIJ",
+    "DOMAIN_HOSTED_ZONE_NAME": "example.com",
+    "KEYCLOAK_AUTH_CONFIG": {
+      "realm": "my-realm",
+      "enabled": true,
+      "displayName": "My Authentication Realm",
+      "clients": [
+        {
+          "clientId": "my-web-app",
+          "name": "My Web Application",
+          "websiteUri": "https://app.example.com",
+          "publicClient": true,
+          "authorizationServicesEnabled": false,
+          "redirectUris": ["__PLACEHOLDER_REDIRECT_URI__"],
+          "postLogoutRedirectUris": ["__PLACEHOLDER_REDIRECT_URI__"],
+          "webOrigins": ["__PLACEHOLDER_WEB_ORIGIN__"]
+        }
+      ],
+      "users": [
+        {
+          "username": "service-account",
+          "generatePassword": true,
+          "email": "service@example.com"
+        }
+      ]
     }
   }
 }
 ```
 
-#### Configuration Parameters
+**Note:** In this example, both `DOMAIN_CERTIFICATE_ARN` and `DOMAIN_HOSTNAME` are omitted. When `DOMAIN_HOSTED_ZONE_ID` and `DOMAIN_HOSTED_ZONE_NAME` are provided:
 
-**Core Settings:**
-- `projectName`: Used for resource naming and tagging
-- `account`: AWS account ID for deployment
-- `region`: AWS region for deployment
-- `isProd`: Boolean flag affecting security and scaling settings
+- The hostname defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` (e.g., `auth.example.com`)
+- An ACM certificate is automatically created with DNS validation
+- ACM handles automatic certificate renewal
 
-**VPC Configuration Options:**
+### Configuration Parameters
 
-The CDK stack supports two VPC deployment modes:
+**Required Fields:**
 
-**Use Existing VPC:**
-- **Optional parameter**: `vpcId`
-- **Behavior**: When `vpcId` is provided, the stack will import and use the specified existing VPC
-- **Requirements**: The existing VPC must have both public and private subnets with internet connectivity (NAT Gateway or NAT Instance)
-- **Use case**: Integrate with existing AWS infrastructure or share VPC resources across multiple stacks
+| Field            | Description                                             | Validation                                  |
+| ---------------- | ------------------------------------------------------- | ------------------------------------------- |
+| `projectName`    | Project name used for stack naming and resource tagging | Non-empty string                            |
+| `account.id`     | AWS Account ID                                          | Exactly 12 digits                           |
+| `account.region` | AWS Region for deployment                               | Valid AWS region format (e.g., `us-west-2`) |
 
-**Create New VPC (Default):**
-- **Default behavior**: When `vpcId` is not specified, the stack creates a new VPC
-- **Configuration**: Creates a VPC with public and private subnets, NAT Gateway, and appropriate routing
-- **Use case**: Standalone deployment with isolated network infrastructure
+**Account Configuration:**
 
-**VPC Requirements:**
-For both existing and new VPCs, the deployment requires:
-- Private subnets with egress connectivity (for ECS tasks and RDS database)
-- Public subnets (for internet-facing load balancer, if `internetFacing: true`)
-- Proper security group configurations will be created automatically
+| Field              | Type    | Default | Description                                                                |
+| ------------------ | ------- | ------- | -------------------------------------------------------------------------- |
+| `account.prodLike` | boolean | `false` | Enables production settings (termination protection, longer log retention) |
+| `account.isAdc`    | boolean | `false` | Indicates ADC (Air-gapped Data Center) environment                         |
 
-**Domain Configuration Options:**
+**Network Configuration (`networkConfig`):**
 
-The `domain` section supports two deployment modes:
+| Field                 | Type     | Default                        | Description                                     |
+| --------------------- | -------- | ------------------------------ | ----------------------------------------------- |
+| `VPC_NAME`            | string   | `"auth-server-vpc"`            | Name for new VPC                                |
+| `VPC_ID`              | string   | -                              | Import existing VPC (requires `TARGET_SUBNETS`) |
+| `MAX_AZS`             | number   | `2`                            | Maximum Availability Zones                      |
+| `TARGET_SUBNETS`      | string[] | -                              | Specific subnet IDs (required with `VPC_ID`)    |
+| `SECURITY_GROUP_ID`   | string   | -                              | Import existing security group                  |
+| `SECURITY_GROUP_NAME` | string   | `"auth-server-security-group"` | Name for new security group                     |
 
-**Internet-Facing Deployment (`internetFacing: true`):**
-- **Required properties**: `hostname`, `hostedZoneId`, `certificateArn`
-- **Creates**: Internet-facing Application Load Balancer with HTTPS listener and Route53 DNS record
-- **Use case**: Public-facing Keycloak server accessible from the internet
+**Dataplane Configuration (`dataplaneConfig`):**
 
-**Internal-Only Deployment (`internetFacing: false`):**
-- **Required properties**: `hostname` only
-- **Creates**: Internal Application Load Balancer with HTTP listener, no DNS record
-- **Use case**: Keycloak server only accessible within your AWS account/VPC
-- **Access method**: Use the ALB's generated DNS name (available as a CloudFormation output: `LoadBalancerDNS`)
+| Field                        | Type    | Default                              | Description                                                                           |
+| ---------------------------- | ------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
+| `KEYCLOAK_IMAGE`             | string  | `"quay.io/keycloak/keycloak:latest"` | Keycloak Docker image                                                                 |
+| `KEYCLOAK_ADMIN_USERNAME`    | string  | `"keycloak"`                         | Admin username                                                                        |
+| `ECS_TASK_CPU`               | number  | `4096`                               | CPU units (1024 = 1 vCPU)                                                             |
+| `ECS_TASK_MEMORY`            | number  | `8192`                               | Memory in MB                                                                          |
+| `ECS_MIN_CONTAINERS`         | number  | `2`                                  | Minimum container count                                                               |
+| `ECS_MAX_CONTAINERS`         | number  | `10`                                 | Maximum container count                                                               |
+| `ECS_CPU_UTILIZATION_TARGET` | number  | `75`                                 | Auto-scaling CPU target (%)                                                           |
+| `JAVA_OPTS`                  | string  | `"-server -Xms1024m -Xmx1638m"`      | JVM options                                                                           |
+| `DATABASE_INSTANCE_TYPE`     | string  | `"r5.large"`                         | RDS instance type                                                                     |
+| `DOMAIN_HOSTNAME`            | string  | -                                    | Custom domain hostname (defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` if not provided) |
+| `DOMAIN_INTERNET_FACING`     | boolean | `true`                               | Internet-facing load balancer                                                         |
+| `DOMAIN_CERTIFICATE_ARN`     | string  | -                                    | ACM certificate ARN (optional if `DOMAIN_HOSTED_ZONE_ID` provided)                    |
+| `DOMAIN_HOSTED_ZONE_ID`      | string  | -                                    | Route53 hosted zone ID for DNS records and auto-certificate creation                  |
+| `DOMAIN_HOSTED_ZONE_NAME`    | string  | -                                    | Route53 hosted zone name (required with `DOMAIN_HOSTED_ZONE_ID`)                      |
+| `KEYCLOAK_AUTH_CONFIG`       | object  | -                                    | Keycloak realm configuration                                                          |
 
-**Configuration Validation:**
-- If `internetFacing: true`, the deployment will fail immediately if `hostedZoneId` or `certificateArn` are missing
-- If `internetFacing: false`, only `hostname` is required
-- The default value for `internetFacing` is `true`
+**Keycloak Auth Configuration (`dataplaneConfig.KEYCLOAK_AUTH_CONFIG`):**
 
-**Database Configuration:**
-- `instanceType`: RDS Aurora instance type (default: r5.large)
+This optional section configures Keycloak realms, clients, and users. When provided, a Lambda function is created to automatically configure Keycloak on deployment.
 
-**Keycloak Configuration:**
-- `adminUsername`: Master realm admin username
-- `keycloakImage`: Docker image to use for Keycloak (default: `quay.io/keycloak/keycloak:latest`)
-  - **Default behavior**: Uses the latest Keycloak image to avoid stale versions
-  - **Version pinning**: Specify a specific version for reproducible deployments (e.g., `quay.io/keycloak/keycloak:26.0.7`)
-  - **Custom images**: Use custom or organization-specific Keycloak images
-  
-  **Deployment Recommendation:**
-  
-  While the default uses `:latest` for development convenience, **it is strongly recommended to pin to a specific Keycloak version for  deployments** to ensure stability and predictable behavior.
-  
-  **Current Testing Status:**
-  - This configuration has been tested and verified with **Keycloak v26.x** (current latest version)
+| Field         | Type    | Description                    |
+| ------------- | ------- | ------------------------------ |
+| `realm`       | string  | Realm name                     |
+| `enabled`     | boolean | Whether the realm is enabled   |
+| `displayName` | string  | Display name for the realm     |
+| `clients`     | array   | Array of client configurations |
+| `users`       | array   | Array of user configurations   |
 
-  
-  **Version Compatibility Notes:**
-  - `container`: ECS container resource settings
-  - `cpu`: CPU units (1024 = 1 vCPU)
-  - `memory`: Memory in MB
-  - `minCount`/`maxCount`: Auto-scaling limits
-  - `cpuUtilizationTarget`: CPU target for auto-scaling (percentage)
-  - `javaOpts`: JVM options for Keycloak
+**Placeholder Replacement in Auth Config:**
 
-### Custom Authentication Configuration (`config/auth-config.json`)
+- `__PLACEHOLDER_REDIRECT_URI__` → `${websiteUri}/*`
+- `__PLACEHOLDER_WEB_ORIGIN__` → `${websiteUri}`
 
-To customize your Keycloak deployment with additional realms, clients, and users:
+### Common Deployment Scenarios
 
-```bash
-cp config/auth-config.example.json config/auth-config.json
-```
+#### Scenario 1: New VPC (Default)
 
-Complete authentication configuration example:
+Create a new VPC with default settings:
 
 ```json
 {
-  "realm": "your-realm",
-  "enabled": true,
-  "displayName": "Your Authentication Realm",
-  "clients": [
-    {
-      "clientId": "your-web-app",
-      "name": "Your Web Application",
-      "description": "Client for the web application",
-      "websiteUri": "https://app.example.com",
-      "publicClient": true,
-      "authorizationServicesEnabled": false,
-      "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": true,
-      "implicitFlowEnabled": false,
-      "serviceAccountsEnabled": false,
-      "redirectUris": ["__PLACEHOLDER_REDIRECT_URI__"],
-      "postLogoutRedirectUris": ["__PLACEHOLDER_REDIRECT_URI__"],
-      "webOrigins": ["__PLACEHOLDER_WEB_ORIGIN__"]
-    }
-  ],
-  "users": [
-    {
-      "username": "service-account",
-      "generatePassword": true,
-      "ssmPasswordPath": "users/service-account/password",
-      "email": "service@example.com",
-      "firstName": "Service",
-      "lastName": "Account",
-      "enabled": true
-    }
-  ]
+  "projectName": "MyAuthServer",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": false,
+    "isAdc": false
+  }
 }
 ```
 
-**Placeholder Replacement:**
-- `__PLACEHOLDER_REDIRECT_URI__` and `__PLACEHOLDER_WEB_ORIGIN__` will be automatically replaced with values from your `websiteUri` configuration
-- For `__PLACEHOLDER_REDIRECT_URI__`: Uses `websiteUri + "/*"` (e.g., "https://app.example.com/*")
-- For `__PLACEHOLDER_WEB_ORIGIN__`: Uses `websiteUri` origin (e.g., "https://app.example.com")
+This creates:
 
-**Client Configuration Options:**
-- `publicClient`: true for frontend applications, false for backend services
-- `authorizationServicesEnabled`: Enable fine-grained authorization
-- `standardFlowEnabled`: Enable authorization code flow (OAuth2)
-- `directAccessGrantsEnabled`: Enable username/password authentication
-- `implicitFlowEnabled`: Enable implicit flow (not recommended for production)
-- `serviceAccountsEnabled`: Enable service account for client credentials flow
+- New VPC named `auth-server-vpc` with 2 AZs
+- Public and private subnets with NAT Gateway
+- New security group
+- VPC Flow Logs with 1-week retention
 
-**User Configuration Options:**
-- `generatePassword`: Automatically generate a secure password
-- `ssmPasswordPath`: Store password in AWS Systems Manager Parameter Store
-- All standard Keycloak user attributes are supported
+#### Scenario 2: Existing VPC
+
+Use an existing VPC with specific subnets:
+
+```json
+{
+  "projectName": "MyAuthServer",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": false,
+    "isAdc": false
+  },
+  "networkConfig": {
+    "VPC_ID": "vpc-0123456789abcdef0",
+    "TARGET_SUBNETS": ["subnet-11111111", "subnet-22222222"],
+    "SECURITY_GROUP_ID": "sg-0123456789abcdef0"
+  }
+}
+```
+
+**Note:** When using `VPC_ID`, you must also provide `TARGET_SUBNETS`.
+
+#### Scenario 3: Production Environment
+
+Production deployment with enhanced security:
+
+```json
+{
+  "projectName": "ProdAuthServer",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": true,
+    "isAdc": false
+  },
+  "dataplaneConfig": {
+    "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:26.0.7",
+    "ECS_MIN_CONTAINERS": 3,
+    "ECS_MAX_CONTAINERS": 20,
+    "DATABASE_INSTANCE_TYPE": "r5.xlarge",
+    "DOMAIN_HOSTNAME": "auth.example.com",
+    "DOMAIN_INTERNET_FACING": true,
+    "DOMAIN_CERTIFICATE_ARN": "arn:aws:acm:...",
+    "DOMAIN_HOSTED_ZONE_ID": "Z..."
+  }
+}
+```
+
+Production settings enable:
+
+- Stack termination protection
+- Database deletion protection
+- VPC Flow Logs with 1-year retention
+- Log group retention policy set to RETAIN
+
+#### Scenario 4: Internal-Only Deployment
+
+Internal load balancer without public DNS:
+
+```json
+{
+  "projectName": "InternalAuth",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": false,
+    "isAdc": false
+  },
+  "dataplaneConfig": {
+    "DOMAIN_INTERNET_FACING": false
+  }
+}
+```
+
+**Note:** When `DOMAIN_INTERNET_FACING` is `false`, `DOMAIN_HOSTNAME` is optional (will use ALB DNS) and TLS is not required.
+
+#### Scenario 5: Public Deployment with Auto-Created Certificate
+
+For public-facing deployments, TLS is required. You can either provide an existing certificate ARN or let CDK create one automatically using DNS validation:
+
+```json
+{
+  "projectName": "PublicAuth",
+  "account": {
+    "id": "123456789012",
+    "region": "us-west-2",
+    "prodLike": false,
+    "isAdc": false
+  },
+  "dataplaneConfig": {
+    "DOMAIN_INTERNET_FACING": true,
+    "DOMAIN_HOSTED_ZONE_ID": "Z0123456789ABCDEFGHIJ",
+    "DOMAIN_HOSTED_ZONE_NAME": "example.com"
+  }
+}
+```
+
+When `DOMAIN_HOSTED_ZONE_ID` and `DOMAIN_HOSTED_ZONE_NAME` are provided without `DOMAIN_CERTIFICATE_ARN`:
+
+- The hostname defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` (e.g., `auth.example.com`)
+- An ACM certificate is automatically created with DNS validation
+- The certificate is validated using Route53 DNS records (created automatically)
+- ACM handles automatic certificate renewal (no manual intervention needed)
+- In production (`prodLike: true`), the certificate is retained on stack deletion
+- In non-production, the certificate is deleted with the stack
+
+**Note:** If you prefer to manage certificates separately, provide `DOMAIN_CERTIFICATE_ARN` instead. You can also override the default hostname by providing `DOMAIN_HOSTNAME`.
+
+### Stack Naming Convention
+
+Stacks are named using the pattern `${projectName}-<StackType>`:
+
+| Stack     | Name Pattern               | Example                  |
+| --------- | -------------------------- | ------------------------ |
+| Network   | `${projectName}-Network`   | `MyAuthServer-Network`   |
+| Dataplane | `${projectName}-Dataplane` | `MyAuthServer-Dataplane` |
+
+## Migration from Old Configuration
+
+If you're migrating from the old `config/app-config.json` format:
+
+### Step 1: Create New Configuration
+
+```bash
+cp bin/deployment/deployment.json.example bin/deployment/deployment.json
+```
+
+### Step 2: Map Old Fields to New Format
+
+| Old Field (`app-config.json`)             | New Field (`deployment.json`)                |
+| ----------------------------------------- | -------------------------------------------- |
+| `projectName`                             | `projectName`                                |
+| `account`                                 | `account.id`                                 |
+| `region`                                  | `account.region`                             |
+| `isProd`                                  | `account.prodLike`                           |
+| `vpcId`                                   | `networkConfig.VPC_ID`                       |
+| `domain.hostname`                         | `dataplaneConfig.DOMAIN_HOSTNAME`            |
+| `domain.internetFacing`                   | `dataplaneConfig.DOMAIN_INTERNET_FACING`     |
+| `domain.hostedZoneId`                     | `dataplaneConfig.DOMAIN_HOSTED_ZONE_ID`      |
+| `domain.certificateArn`                   | `dataplaneConfig.DOMAIN_CERTIFICATE_ARN`     |
+| `database.instanceType`                   | `dataplaneConfig.DATABASE_INSTANCE_TYPE`     |
+| `keycloak.adminUsername`                  | `dataplaneConfig.KEYCLOAK_ADMIN_USERNAME`    |
+| `keycloak.keycloakImage`                  | `dataplaneConfig.KEYCLOAK_IMAGE`             |
+| `keycloak.container.cpu`                  | `dataplaneConfig.ECS_TASK_CPU`               |
+| `keycloak.container.memory`               | `dataplaneConfig.ECS_TASK_MEMORY`            |
+| `keycloak.container.minCount`             | `dataplaneConfig.ECS_MIN_CONTAINERS`         |
+| `keycloak.container.maxCount`             | `dataplaneConfig.ECS_MAX_CONTAINERS`         |
+| `keycloak.container.cpuUtilizationTarget` | `dataplaneConfig.ECS_CPU_UTILIZATION_TARGET` |
+| `keycloak.container.javaOpts`             | `dataplaneConfig.JAVA_OPTS`                  |
+
+### Step 3: Migrate Auth Configuration
+
+If you had a separate `config/auth-config.json`, move its contents into `dataplaneConfig.KEYCLOAK_AUTH_CONFIG`:
+
+```json
+{
+  "dataplaneConfig": {
+    "KEYCLOAK_AUTH_CONFIG": {
+      // Contents of your old auth-config.json
+    }
+  }
+}
+```
+
+### Step 4: Update Stack References
+
+The stack names have changed:
+
+- Old: `KeycloakStack`
+- New: `${projectName}-Network` and `${projectName}-Dataplane`
+
+Update any external references to CloudFormation outputs.
+
+### Step 5: Delete Old Configuration Files
+
+After successful migration:
+
+```bash
+rm config/app-config.json
+rm config/auth-config.json  # If it existed
+```
+
+## Troubleshooting
+
+### Common Errors
+
+#### Missing deployment.json
+
+```
+DeploymentConfigError: Missing deployment.json file at /path/to/bin/deployment/deployment.json.
+Please create it by copying deployment.json.example
+```
+
+**Solution:** Copy the example file:
+
+```bash
+cp bin/deployment/deployment.json.example bin/deployment/deployment.json
+```
+
+#### Invalid AWS Account ID
+
+```
+DeploymentConfigError: Invalid AWS account ID format: 'abc123'. Must be exactly 12 digits.
+```
+
+**Solution:** Ensure `account.id` is exactly 12 digits (e.g., `"123456789012"`).
+
+#### Invalid AWS Region
+
+```
+DeploymentConfigError: Invalid AWS region format: 'invalid'. Must follow pattern like 'us-east-1'.
+```
+
+**Solution:** Use a valid AWS region format (e.g., `us-west-2`, `eu-west-1`).
+
+#### Invalid VPC ID Format
+
+```
+DeploymentConfigError: Invalid VPC ID format: 'my-vpc'. Must start with 'vpc-' followed by 8 or 17 hexadecimal characters.
+```
+
+**Solution:** Use the correct VPC ID format (e.g., `vpc-0123456789abcdef0`).
+
+#### Missing TARGET_SUBNETS with VPC_ID
+
+```
+DeploymentConfigError: When VPC_ID is provided, TARGET_SUBNETS must also be specified with at least one subnet ID
+```
+
+**Solution:** Add `TARGET_SUBNETS` array when using an existing VPC:
+
+```json
+{
+  "networkConfig": {
+    "VPC_ID": "vpc-...",
+    "TARGET_SUBNETS": ["subnet-...", "subnet-..."]
+  }
+}
+```
+
+#### Invalid Security Group ID
+
+```
+DeploymentConfigError: Invalid security group ID format: 'my-sg'. Must start with 'sg-' followed by 8 or 17 hexadecimal characters.
+```
+
+**Solution:** Use the correct security group ID format (e.g., `sg-0123456789abcdef0`).
+
+#### DOMAIN_HOSTNAME Required for Internet-Facing
+
+```
+Error: DOMAIN_HOSTNAME or DOMAIN_HOSTED_ZONE_NAME is required when DOMAIN_INTERNET_FACING is true (public-facing deployment)
+```
+
+**Solution:** Either provide a `DOMAIN_HOSTNAME`, `DOMAIN_HOSTED_ZONE_NAME` (hostname defaults to `auth.{zoneName}`), or set `DOMAIN_INTERNET_FACING` to `false`:
+
+```json
+{
+  "dataplaneConfig": {
+    "DOMAIN_INTERNET_FACING": false
+  }
+}
+```
+
+#### DOMAIN_HOSTED_ZONE_NAME Required with DOMAIN_HOSTED_ZONE_ID
+
+```
+Error: DOMAIN_HOSTED_ZONE_NAME is required when DOMAIN_HOSTED_ZONE_ID is provided.
+```
+
+**Solution:** When using `DOMAIN_HOSTED_ZONE_ID`, you must also provide `DOMAIN_HOSTED_ZONE_NAME`:
+
+```json
+{
+  "dataplaneConfig": {
+    "DOMAIN_HOSTED_ZONE_ID": "Z0123456789ABCDEFGHIJ",
+    "DOMAIN_HOSTED_ZONE_NAME": "example.com"
+  }
+}
+```
+
+#### TLS Required for Public-Facing Deployments
+
+```
+Error: TLS is required for public-facing deployments. Provide either DOMAIN_CERTIFICATE_ARN or DOMAIN_HOSTED_ZONE_ID (to auto-create an ACM certificate with DNS validation).
+```
+
+**Solution:** For internet-facing deployments, you must configure TLS. Either:
+
+1. Provide an existing certificate:
+
+```json
+{
+  "dataplaneConfig": {
+    "DOMAIN_HOSTNAME": "auth.example.com",
+    "DOMAIN_INTERNET_FACING": true,
+    "DOMAIN_CERTIFICATE_ARN": "arn:aws:acm:us-west-2:123456789012:certificate/..."
+  }
+}
+```
+
+2. Or let CDK create one automatically (recommended):
+
+```json
+{
+  "dataplaneConfig": {
+    "DOMAIN_INTERNET_FACING": true,
+    "DOMAIN_HOSTED_ZONE_ID": "Z0123456789ABCDEFGHIJ",
+    "DOMAIN_HOSTED_ZONE_NAME": "example.com"
+  }
+}
+```
+
+**Note:** HTTP-only is allowed for internal deployments (`DOMAIN_INTERNET_FACING: false`).
+
+### Deployment Issues
+
+#### VPC Not Found During Import
+
+If CDK fails to find your VPC during synthesis:
+
+1. Verify the VPC ID is correct
+2. Ensure you're deploying to the correct region
+3. Check that your AWS credentials have permission to describe VPCs
+
+#### Stack Dependency Errors
+
+The AuthServerStack depends on NetworkStack. If you see dependency errors:
+
+1. Ensure both stacks are being deployed
+2. Check that the Network stack completes before Dataplane
 
 ## Development
 
-### CDK Architecture
-
-The CDK architecture is organized into several key components:
-
-1. **KeycloakStack** (`lib/keycloak-stack.ts`): The main stack that coordinates all resources
-2. **DatabaseConstruct** (`lib/constructs/database-construct.ts`): Creates the Aurora MySQL database
-3. **KeycloakServiceConstruct** (`lib/constructs/keycloak-service-construct.ts`): Creates the Keycloak ECS Fargate service
-4. **KeycloakConfigLambda** (`lib/constructs/keycloak-config-lambda.ts`): Creates the Lambda function for post-install Keycloak configuration
-
-### Development Setup
-
-1. **Install dependencies**
-   ```bash
-   cd cdk
-   npm install
-   ```
-
-2. **Available Scripts**
-   ```bash
-   # Build TypeScript
-   npm run build
-
-   # Run all tests
-   npm test
-
-   # Run tests with coverage report
-   npm run test:coverage
-
-   # Run only Lambda-specific tests
-   npm run test:lambda
-
-   # Lint code (includes auto-fix)
-   npm run lint
-
-   # Lint code (check only, no auto-fix)
-   npm run lint:check
-
-   # Format code with Prettier
-   npm run format
-
-   # Check code formatting (no changes)
-   npm run format:check
-
-   # Synthesize CloudFormation template
-   npm run synth
-
-   # Watch mode for development
-   npm run watch
-
-   # Deploy to AWS
-   npm run deploy
-
-   # Direct CDK commands
-   npm run cdk -- <command>
-   ```
-
-### Testing Framework
-
-The project includes comprehensive testing:
-
-#### CDK Infrastructure Tests
-Located in `test/` directory:
-- **Stack Construction Tests**: Verify CDK constructs create expected resources
-- **Configuration Validation**: Test configuration loading and validation logic
-- **Resource Property Tests**: Ensure resources have correct properties and relationships
-
-#### Lambda Unit Tests
-Located in `lambda/keycloak-config/test/`:
-- **API Client Tests**: Keycloak Admin API integration
-- **Configuration Tests**: Realm, client, and user configuration logic
-- **AWS Integration Tests**: Secrets Manager and parameter store operations
-- **Utility Function Tests**: Retry mechanisms, error handling, and validation
-
-#### Test Categories
-- **Configuration validation and loading**
-- **Keycloak API integration**
-- **AWS services integration (Secrets Manager)**
-- **Health checks and error handling**
-- **Utility functions**
-
-#### Running Tests
+### Available Scripts
 
 ```bash
-# From CDK directory - run all tests
+# Build TypeScript
+npm run build
+
+# Run all tests
 npm test
+
+# Run tests with coverage
+npm run test:coverage
 
 # Run only Lambda tests
 npm run test:lambda
 
-# Run with coverage report
-npm run test:coverage
+# Lint code (with auto-fix)
+npm run lint
 
-# Run specific test file
-npm test -- keycloak-stack.test.ts
+# Check linting (no auto-fix)
+npm run lint:check
+
+# Format code
+npm run format
+
+# Check formatting
+npm run format:check
+
+# Synthesize CloudFormation
+npm run synth
+
+# Deploy to AWS
+npm run deploy
+
+# Watch mode for development
+npm run watch
 ```
 
-#### Test Organization
+### Testing
 
-Tests can be run either from the CDK directory or from within the Lambda function directory:
+The project includes comprehensive tests:
 
-**From the CDK directory:**
-```bash
-npm test                # Run all tests (CDK and Lambda)
-npm run test:lambda     # Run only Lambda tests
-npm run test:coverage   # Run all tests with coverage report
-```
-
-**From the Lambda directory:**
-```bash
-cd lambda/keycloak-config
-npm test               # Run Lambda tests only
-```
-
-#### Coverage Goals
-- **Branch coverage**: 70%+
-- **Function coverage**: 80%+
-- **Line coverage**: 80%+
-- **Statement coverage**: 80%+
-
-### Local Lambda Testing
-
-For testing the Keycloak configuration Lambda locally:
+- **CDK Infrastructure Tests** (`test/`): Stack and construct tests
+- **Lambda Unit Tests** (`lambda/keycloak-config/test/`): Keycloak configuration Lambda tests
 
 ```bash
-cd lambda/keycloak-config
-npm install
-
-# Run unit tests
+# Run all tests
 npm test
 
-# Test Lambda handler locally (requires Docker and local environment setup)
-node -e "require('./src/index').handler({}, {})"
+# Run specific test file
+npm test -- auth-server-stack.test.ts
+
+# Run with verbose output
+npm test -- --verbose
 ```
 
 ### Adding Features
 
-When adding new features:
+1. Create new constructs in `lib/constructs/auth-server/`
+2. Update the appropriate stack (`network-stack.ts` or `auth-server-stack.ts`)
+3. Add configuration options to `load-deployment.ts`
+4. Add comprehensive tests in `test/`
+5. Update this documentation
 
-1. **Create new constructs** in `lib/constructs/`
-2. **Update the main stack** in `lib/keycloak-stack.ts`
-3. **Add configuration options** to `lib/config/app-config.ts`
-4. **Add comprehensive tests** in `test/`
-5. **Update documentation** as needed
+## CloudFormation Outputs
 
-### Code Quality
+The AuthServerStack exports the following outputs:
 
-The project enforces high code quality standards:
+| Output                   | Description                                  |
+| ------------------------ | -------------------------------------------- |
+| `LoadBalancerDNS`        | DNS name of the Application Load Balancer    |
+| `KeycloakUrl`            | URL to access Keycloak                       |
+| `KeycloakAdminSecretArn` | ARN of the Keycloak admin credentials secret |
 
-- **ESLint** with TypeScript support and strict rules
-- **Prettier** for consistent code formatting
-- **TypeScript** strict mode configuration
-- **Pre-commit hooks** for code quality enforcement
+Access outputs via AWS CLI:
 
-### CI/CD Pipeline
-
-The project includes GitHub Actions workflow (`.github/workflows/cdk.yml`) for:
-- Automated testing on pull requests
-- Code quality checks (linting, formatting)
-- Security scanning
+```bash
+aws cloudformation describe-stacks \
+  --stack-name MyAuthServer-Dataplane \
+  --query 'Stacks[0].Outputs'
+```

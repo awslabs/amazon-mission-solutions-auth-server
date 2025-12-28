@@ -30,15 +30,15 @@ The function code is organized into focused modules:
 
 The Lambda is configured through the following environment variables:
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `KEYCLOAK_URL` | Base URL of the Keycloak server | Yes |
-| `KEYCLOAK_ADMIN_SECRET_ARN` | ARN of Secrets Manager secret containing admin credentials | Yes |
-| `KEYCLOAK_ADMIN_USERNAME` | Master realm admin username (must match secret) | Yes |
-| `WEBSITE_URI` | Base URI for client redirect/origin configuration | Yes |
-| `REALM_CONFIG` | JSON string containing realm, client, and user configuration | No |
-| `USER_PASSWORD_SECRETS` | JSON mapping of usernames to password secret ARNs | No |
-| `LOAD_BALANCER_DNS` | Alternative DNS name if different from KEYCLOAK_URL | No |
+| Variable                    | Description                                                  | Required |
+| --------------------------- | ------------------------------------------------------------ | -------- |
+| `KEYCLOAK_URL`              | Base URL of the Keycloak server                              | Yes      |
+| `KEYCLOAK_ADMIN_SECRET_ARN` | ARN of Secrets Manager secret containing admin credentials   | Yes      |
+| `KEYCLOAK_ADMIN_USERNAME`   | Master realm admin username (must match secret)              | Yes      |
+| `WEBSITE_URI`               | Base URI for client redirect/origin configuration            | Yes      |
+| `REALM_CONFIG`              | JSON string containing realm, client, and user configuration | No       |
+| `USER_PASSWORD_SECRETS`     | JSON mapping of usernames to password secret ARNs            | No       |
+| `LOAD_BALANCER_DNS`         | Alternative DNS name if different from KEYCLOAK_URL          | No       |
 
 ## Health Check Strategy
 
@@ -96,7 +96,7 @@ const configFunction = new CustomResource(this, 'KeycloakConfig', {
     KeycloakUrl: loadBalancer.loadBalancerDnsName,
     AdminSecretArn: adminSecret.secretArn,
     // ... other configuration
-  }
+  },
 });
 ```
 
@@ -113,17 +113,18 @@ aws lambda invoke \
 
 ## Dependencies
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `aws-sdk` | Latest | AWS service integration (Secrets Manager) |
-| `axios` | ^1.x | HTTP client for Keycloak API requests |
-| `querystring` | Built-in | URL encoding for form data |
+| Package       | Version  | Purpose                                   |
+| ------------- | -------- | ----------------------------------------- |
+| `aws-sdk`     | Latest   | AWS service integration (Secrets Manager) |
+| `axios`       | ^1.x     | HTTP client for Keycloak API requests     |
+| `querystring` | Built-in | URL encoding for form data                |
 
 ## Development and Testing
 
 For comprehensive development workflows, testing procedures, and contribution guidelines, see the **[CDK Technical Guide](../../README.md)**.
 
 Key development considerations:
+
 - Follow the established modular architecture
 - Add comprehensive unit tests for new functionality
 - Validate all environment variables and configuration inputs

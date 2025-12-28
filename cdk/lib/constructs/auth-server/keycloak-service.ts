@@ -21,38 +21,67 @@ import {
   ApplicationTargetGroup,
   TargetType,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import { CompositePrincipal, ManagedPolicy, Role, ServicePrincipal } from 'aws-cdk-lib/aws-iam';
+import { IRole } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
-export interface KeycloakServiceConstructProps {
+import { OSMLAccount } from '../types';
+import { ECSRoles } from './ecs-roles';
+
+export interface KeycloakServiceProps {
+  /** The OSML account configuration. */
+  account: OSMLAccount;
+  /** The project name prefix for resource naming. */
   projectName?: string;
+  /** The VPC to deploy the service into. */
   vpc: IVpc;
+  /** The database host endpoint. */
   databaseHost: string;
+  /** The database credentials secret. */
   databaseSecret: ISecret;
+  /** The Keycloak admin credentials secret. */
   keycloakSecret: ISecret;
+  /** The Keycloak admin username. */
   keycloakAdminUsername?: string;
+  /** The Keycloak container image. */
   keycloakImage?: string;
+  /** The task CPU units. */
   taskCpu?: number;
+  /** The task memory in MiB. */
   taskMemory?: number;
+  /** The minimum number of containers. */
   minContainers?: number;
+  /** The maximum number of containers. */
   maxContainers?: number;
+  /** The target CPU utilization for autoscaling. */
   autoScalingTargetCpuUtilization?: number;
+  /** Java options for Keycloak. */
   javaOpts?: string;
-  hostname: string;
+  /** The hostname for Keycloak. Required for internet-facing, optional for internal (uses ALB DNS if not provided). */
+  hostname?: string;
+  /** The ACM certificate ARN for HTTPS. */
   certificateArn?: string;
+  /** Whether the load balancer is internet-facing. */
   internetFacing?: boolean;
-  isProd?: boolean;
+  /** Optional existing ECS task role. */
+  existingTaskRole?: IRole;
+  /** Optional existing ECS execution role. */
+  existingExecutionRole?: IRole;
 }
 
-export class KeycloakServiceConstruct extends Construct {
+/**
+ * Keycloak Service construct for the Auth Server.
+ * Creates an ECS Fargate service running Keycloak with an Application Load Balancer.
+ */
+export class KeycloakService extends Construct {
   public readonly cluster: ICluster;
   public readonly service: FargateService;
   public readonly loadBalancer: ApplicationLoadBalancer;
   public readonly serviceSecurityGroup: SecurityGroup;
+  public readonly ecsRoles: ECSRoles;
 
-  constructor(scope: Construct, id: string, props: KeycloakServiceConstructProps) {
+  constructor(scope: Construct, id: string, props: KeycloakServiceProps) {
     super(scope, id);
 
     const projectName = props.projectName || 'keycloak';
@@ -63,8 +92,17 @@ export class KeycloakServiceConstruct extends Construct {
     const maxContainers = props.maxContainers || 10;
     const autoScalingTargetCpuUtilization = props.autoScalingTargetCpuUtilization || 75;
     const javaOpts = props.javaOpts || '-server -Xms1024m -Xmx1638m';
-    const isProd = props.isProd || false;
+    const isProd = props.account.prodLike || false;
     const internetFacing = props.internetFacing !== undefined ? props.internetFacing : true;
+
+    // Create ECS roles using the dedicated construct
+    this.ecsRoles = new ECSRoles(this, 'Roles', {
+      account: props.account,
+      taskRoleName: `${projectName}-auth-task-role`,
+      executionRoleName: `${projectName}-auth-execution-role`,
+      existingTaskRole: props.existingTaskRole,
+      existingExecutionRole: props.existingExecutionRole,
+    });
 
     this.cluster = new Cluster(this, 'Cluster', {
       vpc: props.vpc,
@@ -72,9 +110,10 @@ export class KeycloakServiceConstruct extends Construct {
       clusterName: `${projectName}-auth-cluster`,
     });
 
+    const ecsLogGroupName = `/aws/ecs/${projectName}-auth-service`;
     const logGroup = new LogGroup(this, 'LogGroup', {
-      retention: isProd ? RetentionDays.ONE_MONTH : RetentionDays.ONE_WEEK,
-      logGroupName: `/aws/ecs/${projectName}-auth-service`,
+      retention: RetentionDays.ONE_MONTH,
+      logGroupName: ecsLogGroupName,
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
@@ -95,38 +134,27 @@ export class KeycloakServiceConstruct extends Construct {
       'kc jgroups-tcp-fd',
     );
 
-    const taskRole = new Role(this, 'TaskRole', {
-      assumedBy: new CompositePrincipal(
-        new ServicePrincipal('ecs.amazonaws.com'),
-        new ServicePrincipal('ecs-tasks.amazonaws.com'),
-      ),
-      managedPolicies: [
-        ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ContainerRegistryReadOnly'),
-      ],
-      roleName: `${projectName}-auth-task-role`,
+    // Grant secrets access to task role
+    props.databaseSecret.grantRead(this.ecsRoles.taskRole);
+    props.keycloakSecret.grantRead(this.ecsRoles.taskRole);
+    logGroup.grantWrite(this.ecsRoles.taskRole);
+
+    this.loadBalancer = new ApplicationLoadBalancer(this, 'ALB', {
+      vpc: props.vpc,
+      internetFacing: internetFacing,
+      loadBalancerName: `${projectName}-auth-alb`,
+      deletionProtection: isProd,
     });
 
-    const executionRole = new Role(this, 'ExecutionRole', {
-      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
-      roleName: `${projectName}-auth-execution-role`,
-    });
-
-    props.databaseSecret.grantRead(taskRole);
-    props.keycloakSecret.grantRead(taskRole);
-
-    logGroup.grantWrite(taskRole);
-
-    taskRole.addManagedPolicy(
-      ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
-    );
-
-    const taskDef = new FargateTaskDefinition(this, 'TaskDef', {
-      cpu: taskCpu,
-      memoryLimitMiB: taskMemory,
-      taskRole: taskRole,
-      executionRole: executionRole,
-      family: `${projectName}-auth-task`,
-    });
+    // Determine the hostname for Keycloak:
+    // - If hostname is provided, use it (works for both public and internal with custom hostname)
+    // - If hostname is not provided (internal without custom hostname), use ALB DNS
+    const keycloakHostname = props.hostname ?? this.loadBalancer.loadBalancerDnsName;
+    const keycloakHostnameUrl = props.hostname
+      ? props.certificateArn
+        ? `https://${props.hostname}`
+        : `http://${props.hostname}`
+      : `http://${this.loadBalancer.loadBalancerDnsName}`;
 
     const environmentVars: { [key: string]: string } = {
       KC_DB: 'mysql',
@@ -134,8 +162,8 @@ export class KeycloakServiceConstruct extends Construct {
       KC_DB_URL_HOST: props.databaseHost,
       KC_DB_URL_PORT: '3306',
       KC_DB_USERNAME: 'admin',
-      KC_HOSTNAME: props.hostname,
-      KC_HOSTNAME_URL: props.certificateArn ? `https://${props.hostname}` : `http://${props.hostname}`,
+      KC_HOSTNAME: keycloakHostname,
+      KC_HOSTNAME_URL: keycloakHostnameUrl,
       KC_HOSTNAME_STRICT_BACKCHANNEL: 'true',
       KC_PROXY: 'edge',
       KC_PROXY_ADDRESS_FORWARDING: 'true',
@@ -160,6 +188,14 @@ export class KeycloakServiceConstruct extends Construct {
 
     const keycloakEntrypoint = ['sh', '-c', entrypointScript];
 
+    const taskDef = new FargateTaskDefinition(this, 'TaskDef', {
+      cpu: taskCpu,
+      memoryLimitMiB: taskMemory,
+      taskRole: this.ecsRoles.taskRole,
+      executionRole: this.ecsRoles.executionRole,
+      family: `${projectName}-auth-task`,
+    });
+
     const container = taskDef.addContainer('keycloak', {
       image: ContainerImage.fromRegistry(keycloakImage),
       entryPoint: keycloakEntrypoint,
@@ -182,13 +218,6 @@ export class KeycloakServiceConstruct extends Construct {
       { containerPort: 7800, protocol: Protocol.TCP },
       { containerPort: 57800, protocol: Protocol.TCP },
     );
-
-    this.loadBalancer = new ApplicationLoadBalancer(this, 'ALB', {
-      vpc: props.vpc,
-      internetFacing: internetFacing,
-      loadBalancerName: `${projectName}-auth-alb`,
-      deletionProtection: isProd,
-    });
 
     const targetGroup = new ApplicationTargetGroup(this, 'TargetGroup', {
       vpc: props.vpc,
