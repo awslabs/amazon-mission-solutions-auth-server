@@ -24,14 +24,6 @@
     "resolveJsonModule": true,
     "esModuleInterop": true
   },
-  "exclude": [
-    "node_modules",
-    "cdk.out",
-    "dist"
-  ],
-  "include": [
-    "bin/**/*",
-    "lib/**/*",
-    "test/**/*"
-  ]
+  "exclude": ["node_modules", "cdk.out", "dist"],
+  "include": ["bin/**/*", "lib/**/*", "test/**/*"]
 }

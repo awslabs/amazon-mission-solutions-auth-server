@@ -13,6 +13,10 @@ module.exports = {
   },
   // Don't transform JS files in node_modules
   transformIgnorePatterns: ['/node_modules/'],
+  // Exclude cdk.out and other build artifacts from module resolution
+  modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+  // Exclude cdk.out from test discovery
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
   collectCoverage: true,
   collectCoverageFrom: [
     'lambda/keycloak-config/src/**/*.js',
@@ -23,6 +27,7 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
+  coveragePathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
   coverageThreshold: {
     global: {
       statements: 70,
@@ -46,6 +51,8 @@ module.exports = {
       transform: {
         '^.+\\.tsx?$': 'ts-jest',
       },
+      modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+      testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
     },
     {
       displayName: 'keycloak-lambda',
@@ -56,7 +63,11 @@ module.exports = {
       // Use the Lambda's setup file
       setupFilesAfterEnv: ['<rootDir>/lambda/keycloak-config/test/setup.js'],
       // Exclude setup.js from being treated as a test
-      testPathIgnorePatterns: ['<rootDir>/lambda/keycloak-config/test/setup.js'],
+      testPathIgnorePatterns: [
+        '<rootDir>/lambda/keycloak-config/test/setup.js',
+        '<rootDir>/cdk.out/',
+      ],
+      modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
     },
   ],
   verbose: true,

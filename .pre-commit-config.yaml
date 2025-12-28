@@ -1,20 +1,21 @@
 repos:
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.4.0
-  hooks:
-    - id: check-yaml
-    - id: end-of-file-fixer
-    - id: trailing-whitespace
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
 
-- repo: https://github.com/awslabs/automated-security-helper.git
-  rev: 'v2.0.1'
-  hooks:
-    - id: ash
-      name: scan files using ash
-      stages: [ manual ]
+  - repo: https://github.com/aws-samples/automated-security-helper
+    rev: 'v3.0.0'
+    hooks:
+      - id: ash
+        stages: [manual]
+        # uncomment the line below if using "finch" on MacOS
+        # args: [ "-f" ]
 
-- repo: local
-  hooks:
+  - repo: local
+    hooks:
       - id: check-copyright
         name: Check for copyright
         entry: python .github/hooks/check-copyright.py
@@ -33,8 +34,11 @@ repos:
             .*/node_modules/.*|
             .*/cdk\.out/.*|
             .*/coverage/.*|
+            .*/dist/.*|
             cdk/config/.*|
             cdk/\.prettierrc$|
+            cdk/\.prettierignore$|
+            cdk/.+\.example$|
             docs/.*|
             LICENSE|
             NOTICE|
@@ -43,34 +47,32 @@ repos:
             CODE_OF_CONDUCT\.md|
           )$
 
-- repo: local
-  hooks:
-    - id: npm-install
-      name: Install npm dependencies
-      entry: bash -c 'cd cdk && npm ci'
-      language: system
-      files: ^cdk/.*\.(ts|tsx|js|jsx|json)$
-      pass_filenames: false
+      - id: npm-install
+        name: Install npm dependencies
+        entry: bash -c 'cd cdk && npm ci'
+        language: system
+        files: ^cdk/.*\.(ts|tsx|js|jsx|json)$
+        pass_filenames: false
 
-    - id: jest
-      name: Jest Tests
-      entry: bash -c 'cd cdk && npm run test'
-      language: system
-      files: ^cdk/.*\.(ts|tsx)$
-      types: [ file ]
-      pass_filenames: false
-      stages: [manual]
+      - id: jest
+        name: Jest Tests
+        entry: bash -c 'cd cdk && npm test'
+        language: system
+        files: ^cdk/.*\.(ts|tsx)$
+        types: [file]
+        pass_filenames: false
+        stages: [manual]
 
-    - id: eslint
-      name: ESLint
-      entry: bash -c 'cd cdk && npm run lint:check'
-      language: system
-      files: ^cdk/.*\.(ts|tsx)$
-      types: [file]
+      - id: eslint
+        name: ESLint
+        entry: bash -c 'cd cdk && npx eslint --fix --max-warnings 0 "**/*.{js,ts}"'
+        language: system
+        files: ^cdk/.*\.(ts|tsx|js)$
+        types: [file]
 
-    - id: prettier
-      name: Prettier
-      entry: bash -c 'cd cdk && npm run format'
-      language: system
-      files: ^cdk/.*\.(ts|tsx|js|jsx|json|yml|yaml|md)$
-      types: [file]
+      - id: prettier
+        name: Prettier
+        entry: bash -c 'cd cdk && npx prettier --write .'
+        language: system
+        files: ^cdk/.*\.(ts|tsx|js|jsx|json|yml|yaml|md)$
+        types: [file]

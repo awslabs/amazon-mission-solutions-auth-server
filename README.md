@@ -89,7 +89,9 @@ This gives you a clean Keycloak server that you can configure manually through t
 - All credentials are stored in AWS Secrets Manager
 - Keycloak admin password is randomly generated during deployment
 - Database is encrypted at rest and in transit
-- All traffic uses HTTPS (when certificateArn is provided)
+- TLS is required for public-facing deployments (HTTP-only allowed for internal deployments)
+- Automatic ACM certificate creation with DNS validation when hosted zone is provided
+- ACM handles automatic certificate renewal (no manual intervention needed)
 - Private subnets are used for all resources except the load balancer
 - Least-privilege IAM policies for all resources
 

@@ -23,19 +23,23 @@ import {
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
-export interface DatabaseConstructProps {
+export interface DatabaseProps {
   vpc: IVpc;
   projectName?: string;
   databaseInstanceType?: string;
   isProd?: boolean;
 }
 
-export class DatabaseConstruct extends Construct {
+/**
+ * Database construct for the Auth Server.
+ * Creates an Aurora MySQL database cluster with appropriate security groups and configuration.
+ */
+export class Database extends Construct {
   public readonly databaseCluster: DatabaseCluster;
   public readonly databaseSecret: ISecret;
   public readonly dbSecurityGroup: SecurityGroup;
 
-  constructor(scope: Construct, id: string, props: DatabaseConstructProps) {
+  constructor(scope: Construct, id: string, props: DatabaseProps) {
     super(scope, id);
 
     const projectName = props.projectName || 'keycloak';

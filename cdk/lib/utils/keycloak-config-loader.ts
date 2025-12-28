@@ -2,8 +2,13 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+/**
+ * Type definitions for Keycloak configuration.
+ *
+ * These types define the structure of Keycloak authentication configuration
+ * including realms, clients, and users. The configuration is now loaded from
+ * deployment.json under dataplaneConfig.KEYCLOAK_AUTH_CONFIG.
+ */
 
 export interface KeycloakUser {
   username: string;
@@ -37,50 +42,4 @@ export interface KeycloakCustomConfig {
   displayName?: string;
   clients: KeycloakClient[];
   users: KeycloakUser[];
-}
-
-export function loadKeycloakConfig(): KeycloakCustomConfig | null {
-  const projectRoot = join(__dirname, '..', '..');
-  const configPath = join(projectRoot, 'config', 'auth-config.json');
-
-  let config: KeycloakCustomConfig | null = null;
-
-  try {
-    const configStr = readFileSync(configPath, 'utf8');
-    config = JSON.parse(configStr) as KeycloakCustomConfig;
-  } catch {
-    return null;
-  }
-
-  if (config === null) {
-    return null;
-  }
-
-  if (config.clients) {
-    config.clients.forEach(client => {
-      const websiteUri = client.websiteUri || '*';
-      const redirectUri = websiteUri === '*' ? '*' : `${websiteUri}/*`;
-      const webOrigin = websiteUri;
-
-      if (client.redirectUris) {
-        client.redirectUris = client.redirectUris.map(uri =>
-          uri === '__PLACEHOLDER_REDIRECT_URI__' ? redirectUri : uri,
-        );
-      }
-
-      if (client.postLogoutRedirectUris) {
-        client.postLogoutRedirectUris = client.postLogoutRedirectUris.map(uri =>
-          uri === '__PLACEHOLDER_REDIRECT_URI__' ? redirectUri : uri,
-        );
-      }
-
-      if (client.webOrigins) {
-        client.webOrigins = client.webOrigins.map(origin =>
-          origin === '__PLACEHOLDER_WEB_ORIGIN__' ? webOrigin : origin,
-        );
-      }
-    });
-  }
-
-  return config;
 }

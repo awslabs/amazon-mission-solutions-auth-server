@@ -16,6 +16,7 @@ cdk-outputs.json
 **/*.js
 !**/jest.config.js
 !**/eslint.config.mjs
+!**/lambda/**/*.js
 **/*.d.ts
 
 # IDE files
@@ -48,7 +49,7 @@ yarn-error.log*
 *~
 
 # Configuration files (use example files as templates)
-cdk/config/app-config.json
+cdk/bin/deployment/deployment.json
 cdk/config/auth-config.json
 
 # Documentation - exclude certain file types but include images and markdown

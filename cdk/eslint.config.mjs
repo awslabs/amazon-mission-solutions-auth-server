@@ -1,39 +1,85 @@
-import eslint from '@eslint/js';
+import js from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
-import prettierRecommended from 'eslint-plugin-prettier/recommended';
+import importPlugin from 'eslint-plugin-import';
+import prettierPlugin from 'eslint-plugin-prettier';
+import jestPlugin from 'eslint-plugin-jest';
+import simpleImportSortPlugin from 'eslint-plugin-simple-import-sort';
+import globals from 'globals';
 
 export default [
+  // Global ignores
   {
-    ignores: [
-      '**/node_modules/**',
-      'cdk.out/**',
-      'dist/**',
-      '**/*.js',
-      '.eslintrc.js',
-      'coverage/**',
-    ],
+    ignores: ['node_modules/**', 'cdk.out/**', 'dist/**', 'coverage/**'],
   },
-  eslint.configs.recommended,
+
+  js.configs.recommended,
+
+  // Configuration for JavaScript files (no type checking)
+  {
+    files: ['**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.es2020,
+        ...globals.jest,
+      },
+    },
+    plugins: {
+      import: importPlugin,
+      prettier: prettierPlugin,
+      jest: jestPlugin,
+      'simple-import-sort': simpleImportSortPlugin,
+    },
+    rules: {
+      // Import rules
+      'import/default': 'off',
+      'import/order': 'off',
+      'import/no-namespace': 'error',
+
+      // Simple import sort
+      'simple-import-sort/imports': 'error',
+
+      // Prettier
+      'prettier/prettier': 'error',
+    },
+  },
+
+  // Configuration for TypeScript files (with type checking)
   {
     files: ['**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
+        project: './tsconfig.json',
         ecmaVersion: 2020,
         sourceType: 'module',
       },
       globals: {
-        console: 'readonly',
-        process: 'readonly',
-        __dirname: 'readonly',
-        Buffer: 'readonly',
+        ...globals.node,
+        ...globals.es2020,
+        ...globals.jest,
       },
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      import: importPlugin,
+      prettier: prettierPlugin,
+      jest: jestPlugin,
+      'simple-import-sort': simpleImportSortPlugin,
     },
     rules: {
+      // Import rules
+      'import/default': 'off',
+      'import/order': 'off',
+      'import/no-namespace': 'error',
+
+      // Simple import sort
+      'simple-import-sort/imports': 'error',
+
+      // TypeScript rules
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -44,29 +90,34 @@ export default [
         },
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-empty-function': 'warn',
+      '@typescript-eslint/no-unused-expressions': ['error', { allowTernary: true }],
+      '@typescript-eslint/no-unsafe-assignment': 'warn',
+      '@typescript-eslint/interface-name-prefix': 'off',
+      '@typescript-eslint/no-empty-interface': 'off',
+      '@typescript-eslint/no-inferrable-types': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/require-await': 'error',
+      '@typescript-eslint/no-empty-function': 'off',
+
+      // Jest rules
+      'jest/no-done-callback': 'off',
+      'jest/no-conditional-expect': 'off',
+
+      // Prettier
+      'prettier/prettier': 'error',
+
+      // Core rules
+      'require-await': 'off',
       'no-console': 'off',
       'no-debugger': 'error',
       'prefer-const': 'error',
     },
-  },
-  prettierRecommended,
-  {
-    files: ['**/test/**/*.ts'],
-    languageOptions: {
-      globals: {
-        describe: 'readonly',
-        test: 'readonly',
-        expect: 'readonly',
-        beforeAll: 'readonly',
-        afterAll: 'readonly',
-        beforeEach: 'readonly',
-        afterEach: 'readonly',
-        jest: 'readonly',
+    settings: {
+      'import/resolver': {
+        typescript: {
+          alwaysTryTypes: true,
+        },
       },
-    },
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ];
