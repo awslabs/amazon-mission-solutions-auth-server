@@ -19,6 +19,7 @@ import {
   ApplicationLoadBalancer,
   ApplicationProtocol,
   ApplicationTargetGroup,
+  SslPolicy,
   TargetType,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { IRole } from 'aws-cdk-lib/aws-iam';
@@ -243,6 +244,7 @@ export class KeycloakService extends Construct {
         protocol: ApplicationProtocol.HTTPS,
         certificates: [{ certificateArn: props.certificateArn }],
         defaultTargetGroups: [targetGroup],
+        sslPolicy: SslPolicy.TLS12,
       });
     } else {
       this.loadBalancer.addListener('HttpListener', {
