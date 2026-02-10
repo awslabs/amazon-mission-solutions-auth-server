@@ -8,7 +8,6 @@ import { Construct } from 'constructs';
 
 import { DeploymentConfig } from '../bin/deployment/load-deployment';
 import { Dataplane, DataplaneConfig } from './constructs/auth-server/dataplane';
-import { OSMLAccount } from './constructs/types';
 
 /**
  * Properties for the AuthServerStack.
@@ -78,14 +77,6 @@ export class AuthServerStack extends Stack {
       terminationProtection: props.deployment.account.prodLike,
     });
 
-    // Convert deployment account config to OSMLAccount
-    const account: OSMLAccount = {
-      id: props.deployment.account.id,
-      region: props.deployment.account.region,
-      prodLike: props.deployment.account.prodLike,
-      isAdc: props.deployment.account.isAdc,
-    };
-
     // Create DataplaneConfig from deployment config or use defaults
     const dataplaneConfig = props.deployment.dataplaneConfig
       ? new DataplaneConfig(props.deployment.dataplaneConfig)
@@ -102,7 +93,7 @@ export class AuthServerStack extends Stack {
 
     // Create Dataplane construct
     this.dataplane = new Dataplane(this, 'Dataplane', {
-      account,
+      account: props.deployment.account,
       vpc: props.vpc,
       securityGroup,
       config: dataplaneConfig,

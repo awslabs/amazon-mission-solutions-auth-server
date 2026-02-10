@@ -27,7 +27,7 @@ export interface OSMLAccount {
   prodLike: boolean;
 
   /**
-   * Whether this is an AWS ADC (Aerospace and Defense Cloud) deployment.
+   * Whether this is an ADC (Air-gapped Data Center) deployment.
    * May affect compliance and security configurations.
    * @default false
    */

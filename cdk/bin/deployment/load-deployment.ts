@@ -43,7 +43,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { DataplaneConfig } from '../../lib/constructs/auth-server/dataplane';
 import { NetworkConfig } from '../../lib/constructs/auth-server/network';
+import { OSMLAccount } from '../../lib/constructs/types';
 import { KeycloakCustomConfig } from '../../lib/utils/keycloak-config-loader';
 
 /**
@@ -54,22 +56,13 @@ export interface DeploymentConfig {
   projectName: string;
 
   /** AWS account configuration. */
-  account: {
-    /** AWS Account ID (12 digits). */
-    id: string;
-    /** AWS region for deployment. */
-    region: string;
-    /** Whether the account is prod-like. Defaults to false if not specified. */
-    prodLike: boolean;
-    /** Whether this is an ADC environment. Defaults to false if not specified. */
-    isAdc: boolean;
-  };
+  account: OSMLAccount;
 
   /** Networking configuration. If VPC_ID is provided, an existing VPC will be imported. Otherwise, a new VPC will be created. */
   networkConfig?: NetworkConfig;
 
   /** Optional Dataplane configuration. Can be a partial config object passed to DataplaneConfig constructor. */
-  dataplaneConfig?: Partial<Record<string, unknown>>;
+  dataplaneConfig?: Partial<DataplaneConfig>;
 }
 
 /**
@@ -280,9 +273,6 @@ export function loadDeploymentConfig(): DeploymentConfig {
 
   // Validate project name
   const projectName = validateStringField(parsedObj.projectName, 'projectName');
-  if (projectName.length === 0) {
-    throw new DeploymentConfigError('projectName cannot be empty');
-  }
 
   // Validate account section
   if (!parsedObj.account || typeof parsedObj.account !== 'object') {
@@ -350,18 +340,18 @@ export function loadDeploymentConfig(): DeploymentConfig {
   }
 
   // Parse optional Dataplane configuration
-  let dataplaneConfig: Partial<Record<string, unknown>> | undefined = undefined;
+  let dataplaneConfig: Partial<DataplaneConfig> | undefined = undefined;
   if (
     parsedObj.dataplaneConfig &&
     typeof parsedObj.dataplaneConfig === 'object' &&
     parsedObj.dataplaneConfig !== null
   ) {
-    dataplaneConfig = parsedObj.dataplaneConfig as Partial<Record<string, unknown>>;
+    dataplaneConfig = parsedObj.dataplaneConfig as Partial<DataplaneConfig>;
 
     // Process placeholder values in KEYCLOAK_AUTH_CONFIG if present
     if (dataplaneConfig.KEYCLOAK_AUTH_CONFIG) {
       dataplaneConfig.KEYCLOAK_AUTH_CONFIG = processAuthConfigPlaceholders(
-        dataplaneConfig.KEYCLOAK_AUTH_CONFIG as KeycloakCustomConfig,
+        dataplaneConfig.KEYCLOAK_AUTH_CONFIG,
       );
     }
   }
@@ -370,9 +360,9 @@ export function loadDeploymentConfig(): DeploymentConfig {
     projectName,
     account: {
       id: accountId,
-      region: region,
-      prodLike: prodLike,
-      isAdc: isAdc,
+      region,
+      prodLike,
+      isAdc,
     },
     networkConfig,
     dataplaneConfig,
@@ -393,11 +383,10 @@ export function loadDeploymentConfig(): DeploymentConfig {
         `  Creating new VPC: ${validatedConfig.networkConfig?.VPC_NAME || 'auth-server-vpc'}`,
       );
     }
-    const authConfig = validatedConfig.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG as
-      | KeycloakCustomConfig
-      | undefined;
-    if (authConfig) {
-      console.log(`  Auth config loaded: realm=${authConfig.realm}`);
+    if (validatedConfig.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG) {
+      console.log(
+        `  Auth config loaded: realm=${validatedConfig.dataplaneConfig.KEYCLOAK_AUTH_CONFIG.realm}`,
+      );
     }
     hasLoggedDeploymentConfig = true;
   }

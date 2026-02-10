@@ -88,21 +88,6 @@ export class ECSRoles extends Construct {
       managedPolicyName: `${props.taskRoleName}-policy`,
     });
 
-    // ECR read permissions for pulling container images
-    const ecrReadPolicyStatement = new PolicyStatement({
-      sid: 'ECRReadOnly',
-      effect: Effect.ALLOW,
-      actions: [
-        'ecr:GetAuthorizationToken',
-        'ecr:BatchCheckLayerAvailability',
-        'ecr:GetDownloadUrlForLayer',
-        'ecr:BatchGetImage',
-        'ecr:DescribeRepositories',
-        'ecr:ListImages',
-      ],
-      resources: ['*'],
-    });
-
     // SSM permissions for ECS Exec functionality
     const ssmPolicyStatement = new PolicyStatement({
       sid: 'SSMCore',
@@ -127,7 +112,7 @@ export class ECSRoles extends Construct {
       ],
     });
 
-    taskPolicy.addStatements(ecrReadPolicyStatement, ssmPolicyStatement, cwLogsPolicyStatement);
+    taskPolicy.addStatements(ssmPolicyStatement, cwLogsPolicyStatement);
 
     taskRole.addManagedPolicy(taskPolicy);
 
@@ -135,12 +120,6 @@ export class ECSRoles extends Construct {
     NagSuppressions.addResourceSuppressions(
       taskPolicy,
       [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'ECR GetAuthorizationToken is an account-level operation requiring wildcard. ECR read permissions need wildcard for pulling images from various repositories.',
-          appliesTo: ['Resource::*'],
-        },
         {
           id: 'AwsSolutions-IAM5',
           reason:

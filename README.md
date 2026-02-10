@@ -30,23 +30,22 @@ Ensure you have the following tools and versions installed:
 
 1. **Clone and install dependencies**
    ```bash
-   git clone https://github.com/awslabs/ams-auth-server.git
-   cd osml-auth-server/cdk
+   git clone https://github.com/awslabs/amazon-mission-solutions-auth-server.git
+   cd amazon-mission-solutions-auth-server/cdk
    npm install
    ```
 
 2. **Configure your deployment**
    ```bash
-   # Copy and customize application configuration
-   cp config/app-config.example.json config/app-config.json
-
-   # (Optional) Copy and customize authentication configuration
-   cp config/auth-config.example.json config/auth-config.json
+   # Copy and customize deployment configuration
+   cp bin/deployment/deployment.json.example bin/deployment/deployment.json
    ```
 
 3. **Deploy the stack**
    ```bash
-   npm run deploy
+   npm run build
+   cdk synth
+   cdk deploy --all
    ```
 
 ## Documentation
@@ -77,7 +76,7 @@ Further documentation is broken down by section.
 
 ## Default Behavior
 
-By default, without any `auth-config.json` file, the deployment creates:
+By default, without `KEYCLOAK_AUTH_CONFIG` in `deployment.json`, the deployment creates:
 - A fresh Keycloak installation with only the master realm
 - Master realm admin user (configurable username, defaults to "keycloak")
 - Admin credentials stored in AWS Secrets Manager

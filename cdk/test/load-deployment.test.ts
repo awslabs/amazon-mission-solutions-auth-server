@@ -14,7 +14,6 @@ import {
   validateStringField,
   validateVpcId,
 } from '../bin/deployment/load-deployment';
-import { KeycloakCustomConfig } from '../lib/utils/keycloak-config-loader';
 
 // Store original file paths
 const deploymentDir = join(__dirname, '..', 'bin', 'deployment');
@@ -403,9 +402,7 @@ describe('load-deployment', () => {
       );
 
       const config = loadDeploymentConfig();
-      const authConfig = config.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG as
-        | KeycloakCustomConfig
-        | undefined;
+      const authConfig = config.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG;
 
       expect(authConfig).toBeDefined();
       expect(authConfig?.realm).toBe('test-realm');
@@ -459,9 +456,7 @@ describe('load-deployment', () => {
       );
 
       const config = loadDeploymentConfig();
-      const authConfig = config.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG as
-        | KeycloakCustomConfig
-        | undefined;
+      const authConfig = config.dataplaneConfig?.KEYCLOAK_AUTH_CONFIG;
 
       expect(authConfig?.clients?.[0].redirectUris).toEqual(['https://example.com/*']);
       expect(authConfig?.clients?.[0].postLogoutRedirectUris).toEqual(['https://example.com/*']);

@@ -8,7 +8,6 @@ import { Construct } from 'constructs';
 
 import { DeploymentConfig } from '../bin/deployment/load-deployment';
 import { Network, NetworkConfig } from './constructs/auth-server/network';
-import { OSMLAccount } from './constructs/types';
 
 /**
  * Properties for the NetworkStack.
@@ -70,20 +69,12 @@ export class NetworkStack extends Stack {
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
 
-    // Convert deployment account config to OSMLAccount
-    const account: OSMLAccount = {
-      id: props.deployment.account.id,
-      region: props.deployment.account.region,
-      prodLike: props.deployment.account.prodLike,
-      isAdc: props.deployment.account.isAdc,
-    };
-
     // Create NetworkConfig from deployment config or use defaults
     const networkConfig = props.deployment.networkConfig ?? new NetworkConfig();
 
     // Create Network construct
     this.network = new Network(this, 'Network', {
-      account,
+      account: props.deployment.account,
       config: networkConfig,
       vpc: props.vpc,
     });

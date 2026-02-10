@@ -4,7 +4,7 @@
 
 import { App, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { Vpc } from 'aws-cdk-lib/aws-ec2';
 
 import { DeploymentConfig } from '../bin/deployment/load-deployment';
 import { Network, NetworkConfig } from '../lib/constructs/auth-server/network';
@@ -271,17 +271,6 @@ describe('Network construct', () => {
     });
   });
 
-  describe('Subnet selection', () => {
-    test('selects private subnets with egress by default', () => {
-      const network = new Network(stack, 'Network', {
-        account: createTestAccount(),
-      });
-
-      expect(network.selectedSubnets).toBeDefined();
-      expect(network.selectedSubnets.subnetType).toBe(SubnetType.PRIVATE_WITH_EGRESS);
-    });
-  });
-
   describe('Exposed properties', () => {
     test('exposes vpc property', () => {
       const network = new Network(stack, 'Network', {
@@ -297,14 +286,6 @@ describe('Network construct', () => {
       });
 
       expect(network.securityGroup).toBeDefined();
-    });
-
-    test('exposes selectedSubnets property', () => {
-      const network = new Network(stack, 'Network', {
-        account: createTestAccount(),
-      });
-
-      expect(network.selectedSubnets).toBeDefined();
     });
 
     test('exposes config property', () => {

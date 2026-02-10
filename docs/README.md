@@ -45,14 +45,14 @@ The XML file is fully compatible with draw.io, allowing you to edit, customize, 
 ### Data Flow
 
 1. **User Authentication Request**
-   - Users access the service through Route53 DNS resolution
+   - When a custom domain is configured, users access through Route53 DNS. Otherwise, users connect directly via the load balancer DNS name.
    - Traffic flows through the Application Load Balancer
    - Load balancer distributes requests across Keycloak containers
 
 2. **Database Operations**
    - Keycloak containers connect to Aurora MySQL for data persistence
    - Write operations go to the writer instance
-   - Read operations can use either writer or reader instances
+   - Reader instance provides high-availability failover and can be promoted to writer if the primary fails
    - Database replication ensures data consistency
 
 3. **Secrets Management**
