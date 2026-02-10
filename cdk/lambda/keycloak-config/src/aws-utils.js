@@ -5,11 +5,14 @@
 /**
  * AWS utility functions for the Keycloak Configuration Lambda
  */
-const AWS = require('aws-sdk');
+const {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} = require('@aws-sdk/client-secrets-manager');
 const config = require('./config');
 
 // Create AWS SDK clients
-const secretsManager = new AWS.SecretsManager();
+const secretsManager = new SecretsManagerClient();
 
 /**
  * Retrieve the admin credentials from AWS Secrets Manager
@@ -23,15 +26,15 @@ async function getAdminCredentials() {
 
   try {
     console.log(`Retrieving admin credentials from secret: ${secretArn}`);
-    const response = await secretsManager.getSecretValue({ SecretId: secretArn }).promise();
+    const response = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: secretArn }),
+    );
 
-    let secretString;
-    if ('SecretString' in response) {
-      secretString = response.SecretString;
-    } else {
+    if (!('SecretString' in response)) {
       throw new Error('Secret is binary and not supported');
     }
 
+    const secretString = response.SecretString;
     const secretObject = JSON.parse(secretString);
 
     if (!secretObject.username || !secretObject.password) {
@@ -71,7 +74,9 @@ async function getOrCreateUserPassword(username) {
 
   try {
     console.log(`Retrieving password for user ${username} from secret: ${secretArn}`);
-    const response = await secretsManager.getSecretValue({ SecretId: secretArn }).promise();
+    const response = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: secretArn }),
+    );
 
     let password;
     if ('SecretString' in response) {
@@ -97,7 +102,7 @@ async function getOrCreateUserPassword(username) {
 
     return password;
   } catch (error) {
-    if (error.code === 'ResourceNotFoundException') {
+    if (error.name === 'ResourceNotFoundException') {
       console.log(`Secret not found for user ${username}, will be created by CDK`);
       // Return a placeholder for now - actual password will be created by CDK
       return 'placeholder-password-will-be-created-by-cdk';

@@ -368,6 +368,11 @@ export class Dataplane extends Construct {
       'Allow MySQL connections from Keycloak service',
     );
 
+    // Ensure ECS service waits for database writer instance to be available.
+    // We target the FargateService specifically (not the whole KeycloakService construct)
+    // to avoid a cyclic dependency with the security group ingress rule above.
+    this.keycloakService.service.node.addDependency(this.database.databaseCluster);
+
     // Conditionally create Keycloak config Lambda if KEYCLOAK_AUTH_CONFIG is provided
     if (this.config.KEYCLOAK_AUTH_CONFIG) {
       // Create security group for the config Lambda
@@ -377,14 +382,7 @@ export class Dataplane extends Construct {
         securityGroupName: `${projectName}-auth-config-lambda-sg`,
       });
 
-      // Determine the correct Keycloak URL:
-      // - If hostname is provided, use it with appropriate protocol
-      // - If hostname is not provided (internal without custom hostname), use ALB DNS with HTTP
-      const keycloakUrl = hostname
-        ? certificateArn
-          ? `https://${hostname}`
-          : `http://${hostname}`
-        : `http://${this.keycloakService.loadBalancer.loadBalancerDnsName}`;
+      const keycloakUrl = this.keycloakService.keycloakUrl;
 
       // Allow Lambda to reach the ALB on the appropriate port
       const albPort = hostname && certificateArn ? 443 : 80;
@@ -394,12 +392,7 @@ export class Dataplane extends Construct {
         'Allow config Lambda to reach Keycloak ALB',
       );
 
-      // Website URI for CORS - use hostname if provided, otherwise ALB DNS
-      const websiteUri = hostname
-        ? certificateArn
-          ? `https://${hostname}`
-          : `http://${hostname}`
-        : `http://${this.keycloakService.loadBalancer.loadBalancerDnsName}`;
+      const websiteUri = this.keycloakService.keycloakUrl;
 
       this.configLambda = new KeycloakConfig(this, 'KeycloakConfig', {
         account: props.account,
@@ -435,15 +428,8 @@ export class Dataplane extends Construct {
       exportName: `${projectName}-LoadBalancerDNS`,
     });
 
-    // Keycloak URL output - use hostname if provided, otherwise ALB DNS
-    const keycloakOutputUrl = hostname
-      ? certificateArn
-        ? `https://${hostname}`
-        : `http://${hostname}`
-      : `http://${this.keycloakService.loadBalancer.loadBalancerDnsName}`;
-
     new CfnOutput(this, 'KeycloakUrl', {
-      value: keycloakOutputUrl,
+      value: this.keycloakService.keycloakUrl,
       description: 'URL to access Keycloak',
       exportName: `${projectName}-KeycloakUrl`,
     });

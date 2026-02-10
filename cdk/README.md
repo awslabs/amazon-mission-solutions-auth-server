@@ -35,13 +35,17 @@ cdk/
 │   ├── network-stack.ts          # NetworkStack
 │   ├── constructs/               # Custom CDK constructs
 │   │   ├── auth-server/          # Auth server specific constructs
+│   │   │   ├── cache-ispn-jdbc-ping.xml # Infinispan cache config
 │   │   │   ├── database.ts       # Aurora MySQL database
 │   │   │   ├── dataplane.ts      # Dataplane construct
+│   │   │   ├── ecs-roles.ts      # ECS IAM roles
 │   │   │   ├── keycloak-config.ts # Keycloak configuration Lambda
 │   │   │   ├── keycloak-service.ts # ECS Fargate service
+│   │   │   ├── lambda-roles.ts   # Lambda IAM roles
 │   │   │   └── network.ts        # Network construct
 │   │   └── types.ts              # Shared types (OSMLAccount, BaseConfig)
 │   └── utils/                    # Utility functions
+│       └── keycloak-config-loader.ts # Keycloak auth config loader
 ├── lambda/                       # Lambda function code
 │   └── keycloak-config/          # Keycloak configuration Lambda
 ├── test/                         # Jest tests for CDK constructs
@@ -74,12 +78,22 @@ npm install
 cp bin/deployment/deployment.json.example bin/deployment/deployment.json
 ```
 
-3. Update `deployment.json` with your environment settings
+3. Update `deployment.json` with your environment settings (see [Configuration](#configuration) below).
 
-4. Deploy the stacks:
+4. Bootstrap CDK (first-time only per account/region):
 
 ```bash
-npm run deploy
+cdk bootstrap aws://ACCOUNT_ID/REGION
+```
+
+Use the same `account.id` and `account.region` from your `deployment.json`. Skip this if the account/region is already bootstrapped.
+
+5. Deploy the stacks:
+
+```bash
+npm run build
+cdk synth
+cdk deploy --all
 ```
 
 ## Configuration
@@ -237,7 +251,7 @@ This creates:
 - New VPC named `auth-server-vpc` with 2 AZs
 - Public and private subnets with NAT Gateway
 - New security group
-- VPC Flow Logs with 1-week retention
+- VPC Flow Logs with 1-month retention
 
 #### Scenario 2: Existing VPC
 
@@ -292,8 +306,7 @@ Production settings enable:
 
 - Stack termination protection
 - Database deletion protection
-- VPC Flow Logs with 1-year retention
-- Log group retention policy set to RETAIN
+- VPC Flow Logs with 1-month retention (log group retained on stack deletion)
 
 #### Scenario 4: Internal-Only Deployment
 
@@ -583,32 +596,38 @@ npm run build
 # Run all tests
 npm test
 
-# Run tests with coverage
-npm run test:coverage
-
-# Run only Lambda tests
-npm run test:lambda
-
-# Lint code (with auto-fix)
-npm run lint
-
-# Check linting (no auto-fix)
-npm run lint:check
-
-# Format code
-npm run format
-
-# Check formatting
-npm run format:check
-
-# Synthesize CloudFormation
-npm run synth
-
-# Deploy to AWS
-npm run deploy
-
 # Watch mode for development
 npm run watch
+
+# Run any CDK command
+cdk synth
+cdk deploy --all
+cdk diff
+cdk destroy
+```
+
+#### Development Commands
+
+These commands can be run directly with `npx`:
+
+```bash
+# Run only Lambda tests
+npx jest --selectProjects keycloak-lambda
+
+# Run tests with coverage
+npx jest --coverage
+
+# Lint code (with auto-fix)
+npx eslint --max-warnings 10 --fix "**/*.{js,ts}"
+
+# Check linting (no auto-fix)
+npx eslint --max-warnings 10 "**/*.{js,ts}"
+
+# Format code
+npx prettier --write "**/*.{ts,js}"
+
+# Check formatting
+npx prettier --check "**/*.{ts,js}"
 ```
 
 ### Testing

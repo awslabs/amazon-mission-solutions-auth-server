@@ -26,6 +26,8 @@ import { IRole } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 import { OSMLAccount } from '../types';
 import { ECSRoles } from './ecs-roles';
@@ -81,19 +83,20 @@ export class KeycloakService extends Construct {
   public readonly loadBalancer: ApplicationLoadBalancer;
   public readonly serviceSecurityGroup: SecurityGroup;
   public readonly ecsRoles: ECSRoles;
+  public readonly keycloakUrl: string;
 
   constructor(scope: Construct, id: string, props: KeycloakServiceProps) {
     super(scope, id);
 
-    const projectName = props.projectName || 'keycloak';
-    const keycloakImage = props.keycloakImage || 'quay.io/keycloak/keycloak:latest';
-    const taskCpu = props.taskCpu || 4096;
-    const taskMemory = props.taskMemory || 8192;
-    const minContainers = props.minContainers || 2;
-    const maxContainers = props.maxContainers || 10;
-    const autoScalingTargetCpuUtilization = props.autoScalingTargetCpuUtilization || 75;
-    const javaOpts = props.javaOpts || '-server -Xms1024m -Xmx1638m';
-    const isProd = props.account.prodLike || false;
+    const projectName = props.projectName ?? 'keycloak';
+    const keycloakImage = props.keycloakImage ?? 'quay.io/keycloak/keycloak:latest';
+    const taskCpu = props.taskCpu ?? 4096;
+    const taskMemory = props.taskMemory ?? 8192;
+    const minContainers = props.minContainers ?? 2;
+    const maxContainers = props.maxContainers ?? 10;
+    const autoScalingTargetCpuUtilization = props.autoScalingTargetCpuUtilization ?? 75;
+    const javaOpts = props.javaOpts ?? '-server -Xms1024m -Xmx1638m';
+    const isProd = props.account.prodLike ?? false;
     const internetFacing = props.internetFacing !== undefined ? props.internetFacing : true;
 
     // Create ECS roles using the dedicated construct
@@ -135,10 +138,10 @@ export class KeycloakService extends Construct {
       'kc jgroups-tcp-fd',
     );
 
-    // Grant secrets access to task role
-    props.databaseSecret.grantRead(this.ecsRoles.taskRole);
-    props.keycloakSecret.grantRead(this.ecsRoles.taskRole);
-    logGroup.grantWrite(this.ecsRoles.taskRole);
+    // Grant secrets access: execution role injects secrets at task start; task role for app runtime.
+    props.databaseSecret.grantRead(this.ecsRoles.executionRole);
+    props.keycloakSecret.grantRead(this.ecsRoles.executionRole);
+    logGroup.grantWrite(this.ecsRoles.executionRole);
 
     this.loadBalancer = new ApplicationLoadBalancer(this, 'ALB', {
       vpc: props.vpc,
@@ -151,7 +154,7 @@ export class KeycloakService extends Construct {
     // - If hostname is provided, use it (works for both public and internal with custom hostname)
     // - If hostname is not provided (internal without custom hostname), use ALB DNS
     const keycloakHostname = props.hostname ?? this.loadBalancer.loadBalancerDnsName;
-    const keycloakHostnameUrl = props.hostname
+    this.keycloakUrl = props.hostname
       ? props.certificateArn
         ? `https://${props.hostname}`
         : `http://${props.hostname}`
@@ -164,9 +167,7 @@ export class KeycloakService extends Construct {
       KC_DB_URL_PORT: '3306',
       KC_DB_USERNAME: 'admin',
       KC_HOSTNAME: keycloakHostname,
-      KC_HOSTNAME_URL: keycloakHostnameUrl,
-      KC_HOSTNAME_STRICT_BACKCHANNEL: 'true',
-      KC_PROXY: 'edge',
+      KC_HOSTNAME_URL: this.keycloakUrl,
       KC_PROXY_ADDRESS_FORWARDING: 'true',
       KC_PROXY_HEADERS: 'xforwarded',
       KC_CACHE_CONFIG_FILE: 'cache-ispn-jdbc-ping.xml',
@@ -175,17 +176,24 @@ export class KeycloakService extends Construct {
       _JAVA_OPTIONS: '-Djdk.net.preferIPv4Stack=true -Djdk.net.preferIPv4Addresses=true',
     };
 
+    // Escape XML for shell embedding so ${env.*} placeholders are written literally for Infinispan.
+    const infinispanXml = readFileSync(join(__dirname, 'cache-ispn-jdbc-ping.xml'), 'utf8')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\$/g, '\\$')
+      .replace(/\n/g, ' ');
+
     let entrypointScript = 'touch cache-ispn-jdbc-ping.xml && ';
 
-    entrypointScript +=
-      'echo "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?> <infinispan    xmlns:xsi=\\"http://www.w3.org/2001/XMLSchema-instance\\"    xsi:schemaLocation=\\"urn:infinispan:config:11.0 http://www.infinispan.org/schemas/infinispan-config-11.0.xsd\\"    xmlns=\\"urn:infinispan:config:11.0\\">  <jgroups>    <stack name=\\"jdbc-ping-tcp\\" extends=\\"tcp\\">      <JDBC_PING connection_driver=\\"com.mysql.cj.jdbc.Driver\\"                 connection_username=\\"\\${env.KC_DB_USERNAME}\\"                  connection_password=\\"\\${env.KC_DB_PASSWORD}\\"                 connection_url=\\"jdbc:mysql://\\${env.KC_DB_URL_HOST}/\\${env.KC_DB_URL_DATABASE}?useSSL=true&amp;requireSSL=false&amp;verifyServerCertificate=false&amp;connectTimeout=30000\\"                                  info_writer_sleep_time=\\"500\\"                 remove_all_data_on_view_change=\\"true\\"                 stack.combine=\\"REPLACE\\"                 stack.position=\\"MPING\\" />    </stack>  </jgroups>  <cache-container name=\\"keycloak\\">    <transport lock-timeout=\\"60000\\" stack=\\"jdbc-ping-tcp\\"/>    <local-cache name=\\"realms\\">      <encoding>        <key media-type=\\"application/x-java-object\\"/>        <value media-type=\\"application/x-java-object\\"/>      </encoding>      <memory max-count=\\"10000\\"/>    </local-cache>    <local-cache name=\\"users\\">      <encoding>        <key media-type=\\"application/x-java-object\\"/>        <value media-type=\\"application/x-java-object\\"/>      </encoding>      <memory max-count=\\"10000\\"/>    </local-cache>    <distributed-cache name=\\"sessions\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <distributed-cache name=\\"authenticationSessions\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <distributed-cache name=\\"offlineSessions\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <distributed-cache name=\\"clientSessions\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <distributed-cache name=\\"offlineClientSessions\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <distributed-cache name=\\"loginFailures\\" owners=\\"3\\">      <expiration lifespan=\\"-1\\"/>    </distributed-cache>    <local-cache name=\\"authorization\\">      <encoding>        <key media-type=\\"application/x-java-object\\"/>        <value media-type=\\"application/x-java-object\\"/>      </encoding>      <memory max-count=\\"10000\\"/>    </local-cache>    <replicated-cache name=\\"work\\">      <expiration lifespan=\\"-1\\"/>    </replicated-cache>    <local-cache name=\\"keys\\">      <encoding>        <key media-type=\\"application/x-java-object\\"/>        <value media-type=\\"application/x-java-object\\"/>      </encoding>      <expiration max-idle=\\"3600000\\"/>      <memory max-count=\\"1000\\"/>    </local-cache>    <distributed-cache name=\\"actionTokens\\" owners=\\"3\\">      <encoding>        <key media-type=\\"application/x-java-object\\"/>        <value media-type=\\"application/x-java-object\\"/>      </encoding>      <expiration max-idle=\\"-1\\" lifespan=\\"-1\\" interval=\\"300000\\"/>     <memory max-count=\\"-1\\"/>    </distributed-cache>  </cache-container></infinispan>" > cache-ispn-jdbc-ping.xml && ';
+    entrypointScript += `echo "${infinispanXml}" > cache-ispn-jdbc-ping.xml && `;
 
     entrypointScript +=
       'cp cache-ispn-jdbc-ping.xml /opt/keycloak/conf/cache-ispn-jdbc-ping.xml && ';
 
     entrypointScript += 'echo "Keycloak will be configured by Lambda after startup" && ';
 
-    entrypointScript += '/opt/keycloak/bin/kc.sh build && /opt/keycloak/bin/kc.sh start --debug';
+    const startFlags = isProd ? '' : ' --debug';
+    entrypointScript += `/opt/keycloak/bin/kc.sh build && /opt/keycloak/bin/kc.sh start${startFlags}`;
 
     const keycloakEntrypoint = ['sh', '-c', entrypointScript];
 

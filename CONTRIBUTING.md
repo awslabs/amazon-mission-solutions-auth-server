@@ -61,13 +61,13 @@ npm test
 Run linting checks with:
 ```
 cd cdk
-npm run lint
+npx eslint --max-warnings 10 --fix "**/*.{js,ts}"
 ```
 
 Format code with:
 ```
 cd cdk
-npm run format
+npx prettier --write "**/*.{ts,js}"
 ```
 
 ## Coding Guidelines

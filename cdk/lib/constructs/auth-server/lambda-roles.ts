@@ -4,7 +4,6 @@
 
 import { region_info } from 'aws-cdk-lib';
 import {
-  CompositePrincipal,
   Effect,
   IRole,
   ManagedPolicy,
@@ -78,7 +77,7 @@ export class LambdaRoles extends Construct {
   private createConfigLambdaRole(props: LambdaRolesProps): IRole {
     const role = new Role(this, 'ConfigLambdaRole', {
       roleName: props.configLambdaRoleName,
-      assumedBy: new CompositePrincipal(new ServicePrincipal('lambda.amazonaws.com')),
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
       description: 'Allows the Auth Server Keycloak Config Lambda to access necessary AWS services',
     });
 
@@ -148,7 +147,7 @@ export class LambdaRoles extends Construct {
   private createProviderRole(props: LambdaRolesProps): IRole {
     const role = new Role(this, 'ProviderRole', {
       roleName: props.providerRoleName,
-      assumedBy: new CompositePrincipal(new ServicePrincipal('lambda.amazonaws.com')),
+      assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
       description:
         'Allows the Auth Server CloudFormation Provider Lambda to invoke the config Lambda',
     });

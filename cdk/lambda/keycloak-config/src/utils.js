@@ -51,14 +51,6 @@ async function retry(
   }
 }
 
-/** Remove undefined values from object
- * @param {object} obj - Object to clean
- * @returns {object} - Cleaned object
- */
-function cleanObject(obj) {
-  return Object.fromEntries(Object.entries(obj).filter(entry => entry[1] !== undefined));
-}
-
 /** Format error with response details
  * @param {Error} error - Error object
  * @returns {string} - Formatted message
@@ -164,7 +156,6 @@ async function makeAuthenticatedRequest(method, url, data, accessToken) {
 module.exports = {
   sleep,
   retry,
-  cleanObject,
   formatError,
   getHealthCheckUrl,
   getAdminApiUrl,

@@ -6,7 +6,6 @@
  * Keycloak API functions for the Keycloak Configuration Lambda
  */
 const axios = require('axios');
-const qs = require('querystring');
 const config = require('./config');
 const utils = require('./utils');
 
@@ -78,7 +77,7 @@ async function login(username, password) {
       client_id: 'admin-cli',
     };
 
-    const response = await axios.post(tokenUrl, qs.stringify(data), {
+    const response = await axios.post(tokenUrl, new URLSearchParams(data).toString(), {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
@@ -111,6 +110,17 @@ async function loginWithRetry(username, password) {
     config.API_RETRY_INTERVAL_MS,
     config.API_RETRY_INTERVAL_MS * 2,
   );
+}
+
+/**
+ * Replace a placeholder value in a list of URIs
+ * @param {string[]} uris - List of URI strings
+ * @param {string} placeholder - Placeholder to match
+ * @param {string|null} replacement - Value to substitute, or null to keep placeholder
+ * @returns {string[]} - URIs with placeholders replaced
+ */
+function replacePlaceholders(uris, placeholder, replacement) {
+  return uris.map(uri => (uri === placeholder && replacement ? replacement : uri));
 }
 
 /**
@@ -151,16 +161,7 @@ async function createOrUpdateRealmWithConfig(token, realmName, realmConfig) {
     console.log(`Minimal realm config: ${JSON.stringify(minimalConfig)}`);
 
     // Create the realm with minimal configuration first
-    const response = await axios({
-      method: 'post',
-      url,
-      data: minimalConfig,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const response = await utils.makeAuthenticatedRequest('post', url, minimalConfig, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully created minimal realm: ${realmName}`);
@@ -210,16 +211,7 @@ async function updateExistingRealm(token, realmName, realmConfig) {
     console.log(`Updating realm: ${realmName}`);
     console.log(`Request URL: ${url}, Method: put`);
 
-    const response = await axios({
-      method: 'put',
-      url,
-      data: updateConfig,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const response = await utils.makeAuthenticatedRequest('put', url, updateConfig, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully updated realm: ${realmName}`);
@@ -266,12 +258,11 @@ async function createOrUpdateClient(token, realm, clientConfig) {
 
     // Handle postLogoutRedirectUris - in Keycloak these belong in attributes
     if (postLogoutRedirectUris && postLogoutRedirectUris.length > 0) {
-      const processedUris = postLogoutRedirectUris.map(uri => {
-        if (uri === '__PLACEHOLDER_REDIRECT_URI__' && websiteUri) {
-          return `${websiteUri}/*`;
-        }
-        return uri;
-      });
+      const processedUris = replacePlaceholders(
+        postLogoutRedirectUris,
+        '__PLACEHOLDER_REDIRECT_URI__',
+        websiteUri ? `${websiteUri}/*` : null,
+      );
 
       // Store as string in attributes as per Keycloak format
       cleanClientConfig.attributes['post.logout.redirect.uris'] = processedUris.join(',');
@@ -282,23 +273,21 @@ async function createOrUpdateClient(token, realm, clientConfig) {
 
     // Handle placeholders in redirectUris
     if (cleanClientConfig.redirectUris) {
-      cleanClientConfig.redirectUris = cleanClientConfig.redirectUris.map(uri => {
-        if (uri === '__PLACEHOLDER_REDIRECT_URI__' && websiteUri) {
-          return `${websiteUri}/*`;
-        }
-        return uri;
-      });
+      cleanClientConfig.redirectUris = replacePlaceholders(
+        cleanClientConfig.redirectUris,
+        '__PLACEHOLDER_REDIRECT_URI__',
+        websiteUri ? `${websiteUri}/*` : null,
+      );
       console.log(`Processed redirectUris: ${JSON.stringify(cleanClientConfig.redirectUris)}`);
     }
 
     // Handle placeholders in webOrigins
     if (cleanClientConfig.webOrigins) {
-      cleanClientConfig.webOrigins = cleanClientConfig.webOrigins.map(origin => {
-        if (origin === '__PLACEHOLDER_WEB_ORIGIN__' && websiteUri) {
-          return websiteUri;
-        }
-        return origin;
-      });
+      cleanClientConfig.webOrigins = replacePlaceholders(
+        cleanClientConfig.webOrigins,
+        '__PLACEHOLDER_WEB_ORIGIN__',
+        websiteUri || null,
+      );
       console.log(`Processed webOrigins: ${JSON.stringify(cleanClientConfig.webOrigins)}`);
     }
 
@@ -309,16 +298,7 @@ async function createOrUpdateClient(token, realm, clientConfig) {
 
     console.log(`Sending client config to Keycloak: ${JSON.stringify(fullConfig, null, 2)}`);
 
-    const response = await axios({
-      method,
-      url,
-      data: fullConfig,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const response = await utils.makeAuthenticatedRequest(method, url, fullConfig, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully ${clientExists ? 'updated' : 'created'} client: ${clientId}`);
@@ -333,31 +313,6 @@ async function createOrUpdateClient(token, realm, clientConfig) {
 }
 
 /**
- * Create or update a default client
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @returns {Promise<void>} - Resolves when the client is created
- */
-async function createOrUpdateDefaultClient(token, realm) {
-  const defaultClient = {
-    clientId: 'keycloak-client',
-    name: 'Keycloak Default Client',
-    description: 'Default client for Keycloak',
-    publicClient: true,
-    authorizationServicesEnabled: false,
-    standardFlowEnabled: true,
-    directAccessGrantsEnabled: true,
-    implicitFlowEnabled: false,
-    serviceAccountsEnabled: false,
-    webOrigins: [config.WEBSITE_URI],
-    redirectUris: config.WEBSITE_URI === '*' ? ['*'] : [`${config.WEBSITE_URI}/*`],
-    postLogoutRedirectUris: config.WEBSITE_URI === '*' ? ['*'] : [`${config.WEBSITE_URI}/*`],
-  };
-
-  return createOrUpdateClient(token, realm, defaultClient);
-}
-
-/**
  * Get client by client ID
  * @param {string} token - Access token
  * @param {string} realm - Name of the realm
@@ -369,14 +324,8 @@ async function getClientByClientId(token, realm, clientId) {
     const clientsUrl = getClientsUrl(config.KEYCLOAK_URL, realm);
     console.log(`Getting client by clientId: ${clientId} in realm: ${realm}`);
 
-    const response = await axios({
-      method: 'get',
-      url: `${clientsUrl}?clientId=${encodeURIComponent(clientId)}`,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const url = `${clientsUrl}?clientId=${encodeURIComponent(clientId)}`;
+    const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     if (response.status === 200 && Array.isArray(response.data)) {
       const clients = response.data;
@@ -389,10 +338,6 @@ async function getClientByClientId(token, realm, clientId) {
     console.log(`Client not found: ${clientId}`);
     return null;
   } catch (error) {
-    if (error.response && error.response.status === 404) {
-      return null;
-    }
-
     const errorMessage = utils.formatError(error);
     console.error(`Error getting client: ${errorMessage}`);
     throw error;
@@ -442,16 +387,7 @@ async function createOrUpdateUser(token, realm, userConfig, password) {
     }
 
     // Create or update the user
-    const response = await axios({
-      method,
-      url,
-      data: userData,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const response = await utils.makeAuthenticatedRequest(method, url, userData, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully ${userExists ? 'updated' : 'created'} user: ${username}`);
@@ -479,25 +415,6 @@ async function createOrUpdateUser(token, realm, userConfig, password) {
 }
 
 /**
- * Create or update a default admin user
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} password - Admin password
- * @returns {Promise<void>} - Resolves when the user is created
- */
-async function createOrUpdateDefaultUser(token, realm, password) {
-  const defaultUser = {
-    username: 'admin',
-    email: 'admin@example.com',
-    firstName: 'Admin',
-    lastName: 'User',
-    enabled: true,
-  };
-
-  return createOrUpdateUser(token, realm, defaultUser, password);
-}
-
-/**
  * Get user by username
  * @param {string} token - Access token
  * @param {string} realm - Name of the realm
@@ -509,14 +426,8 @@ async function getUserByUsername(token, realm, username) {
     const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
     console.log(`Getting user by username: ${username} in realm: ${realm}`);
 
-    const response = await axios({
-      method: 'get',
-      url: `${usersUrl}?username=${encodeURIComponent(username)}&exact=true`,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const url = `${usersUrl}?username=${encodeURIComponent(username)}&exact=true`;
+    const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     if (response.status === 200 && Array.isArray(response.data)) {
       const users = response.data;
@@ -529,10 +440,6 @@ async function getUserByUsername(token, realm, username) {
     console.log(`User not found: ${username}`);
     return null;
   } catch (error) {
-    if (error.response && error.response.status === 404) {
-      return null;
-    }
-
     const errorMessage = utils.formatError(error);
     console.error(`Error getting user: ${errorMessage}`);
     throw error;
@@ -552,20 +459,14 @@ async function setUserPassword(token, realm, userId, password) {
     const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
     console.log(`Setting password for user ID: ${userId} in realm: ${realm}`);
 
-    const response = await axios({
-      method: 'put',
-      url: `${usersUrl}/${userId}/reset-password`,
-      data: {
-        type: 'password',
-        value: password,
-        temporary: false,
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const url = `${usersUrl}/${userId}/reset-password`;
+    const data = {
+      type: 'password',
+      value: password,
+      temporary: false,
+    };
+
+    const response = await utils.makeAuthenticatedRequest('put', url, data, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully set password for user ID: ${userId}`);
@@ -602,16 +503,7 @@ async function createOrUpdateRole(token, realm, roleConfig) {
 
     console.log(`${roleExists ? 'Updating' : 'Creating'} role: ${roleName} in realm: ${realm}`);
 
-    const response = await axios({
-      method,
-      url,
-      data: roleConfig,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-    });
+    const response = await utils.makeAuthenticatedRequest(method, url, roleConfig, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully ${roleExists ? 'updated' : 'created'} role: ${roleName}`);
@@ -636,24 +528,12 @@ async function verifyRealmExists(token, realm) {
     const url = getRealmUrl(config.KEYCLOAK_URL, realm);
     console.log(`Verifying realm exists: ${realm}`);
 
-    const response = await axios({
-      method: 'get',
-      url,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-      validateStatus: status => status < 500, // Don't throw for 4xx errors
-    });
+    const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     const exists = response.status === 200;
     console.log(`Realm ${realm} ${exists ? 'exists' : 'does not exist'}`);
     return exists;
   } catch (error) {
-    if (error.response && error.response.status === 404) {
-      return false;
-    }
-
     const errorMessage = utils.formatError(error);
     console.error(`Error verifying realm: ${errorMessage}`);
     throw error;
@@ -708,24 +588,12 @@ async function verifyRoleExists(token, realm, roleName) {
     const url = `${getRolesUrl(config.KEYCLOAK_URL, realm)}/${roleName}`;
     console.log(`Verifying role exists: ${roleName}`);
 
-    const response = await axios({
-      method: 'get',
-      url,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      timeout: config.API_TIMEOUT_MS,
-      validateStatus: status => status < 500, // Don't throw for 4xx errors
-    });
+    const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     const exists = response.status === 200;
     console.log(`Role ${roleName} ${exists ? 'exists' : 'does not exist'}`);
     return exists;
   } catch (error) {
-    if (error.response && error.response.status === 404) {
-      return false;
-    }
-
     const errorMessage = utils.formatError(error);
     console.error(`Error verifying role: ${errorMessage}`);
     throw error;
@@ -737,9 +605,7 @@ module.exports = {
   loginWithRetry,
   createOrUpdateRealmWithConfig,
   createOrUpdateClient,
-  createOrUpdateDefaultClient,
   createOrUpdateUser,
-  createOrUpdateDefaultUser,
   createOrUpdateRole,
   verifyRealmExists,
   verifyClientExists,

@@ -193,7 +193,12 @@ async function validateSingleClient(accessToken, realmName, expectedClient) {
 
     // Validate redirect URIs (they should be processed from placeholders)
     if (expectedClient.redirectUris) {
-      const redirectValidation = await validateClientRedirectUris(expectedClient, actualClient);
+      const redirectValidation = validateClientUriList(
+        expectedClient,
+        actualClient,
+        'redirectUris',
+        'redirect URIs',
+      );
       if (!redirectValidation.valid) {
         return redirectValidation;
       }
@@ -201,7 +206,12 @@ async function validateSingleClient(accessToken, realmName, expectedClient) {
 
     // Validate web origins
     if (expectedClient.webOrigins) {
-      const originsValidation = await validateClientWebOrigins(expectedClient, actualClient);
+      const originsValidation = validateClientUriList(
+        expectedClient,
+        actualClient,
+        'webOrigins',
+        'web origins',
+      );
       if (!originsValidation.valid) {
         return originsValidation;
       }
@@ -219,65 +229,34 @@ async function validateSingleClient(accessToken, realmName, expectedClient) {
 }
 
 /**
- * Validate client redirect URIs
+ * Validate a URI list property on a client (redirect URIs or web origins)
  * @param {object} expectedClient - Expected client configuration
  * @param {object} actualClient - Actual client from Keycloak
- * @returns {Promise<object>} - Validation result
+ * @param {string} propertyName - Property key on the client object (e.g. 'redirectUris')
+ * @param {string} displayName - Human-readable name for log messages (e.g. 'redirect URIs')
+ * @returns {object} - Validation result
  */
-async function validateClientRedirectUris(expectedClient, actualClient) {
-  if (!actualClient.redirectUris || actualClient.redirectUris.length === 0) {
+function validateClientUriList(expectedClient, actualClient, propertyName, displayName) {
+  if (!actualClient[propertyName] || actualClient[propertyName].length === 0) {
     return {
       valid: false,
-      reason: `Client "${expectedClient.clientId}" has no redirect URIs`,
+      reason: `Client "${expectedClient.clientId}" has no ${displayName}`,
     };
   }
 
-  // Check if placeholders were properly replaced
-  const hasUnprocessedPlaceholder = actualClient.redirectUris.some(uri =>
-    uri.includes('__PLACEHOLDER_'),
+  const hasUnprocessedPlaceholder = actualClient[propertyName].some(item =>
+    item.includes('__PLACEHOLDER_'),
   );
 
   if (hasUnprocessedPlaceholder) {
     return {
       valid: false,
-      reason: `Client "${expectedClient.clientId}" has unprocessed placeholders in redirectUris: ${JSON.stringify(actualClient.redirectUris)}`,
+      reason: `Client "${expectedClient.clientId}" has unprocessed placeholders in ${propertyName}: ${JSON.stringify(actualClient[propertyName])}`,
     };
   }
 
   console.log(
-    `    [PASS] Redirect URIs processed correctly: ${JSON.stringify(actualClient.redirectUris)}`,
-  );
-  return { valid: true };
-}
-
-/**
- * Validate client web origins
- * @param {object} expectedClient - Expected client configuration
- * @param {object} actualClient - Actual client from Keycloak
- * @returns {Promise<object>} - Validation result
- */
-async function validateClientWebOrigins(expectedClient, actualClient) {
-  if (!actualClient.webOrigins || actualClient.webOrigins.length === 0) {
-    return {
-      valid: false,
-      reason: `Client "${expectedClient.clientId}" has no web origins`,
-    };
-  }
-
-  // Check if placeholders were properly replaced
-  const hasUnprocessedPlaceholder = actualClient.webOrigins.some(origin =>
-    origin.includes('__PLACEHOLDER_'),
-  );
-
-  if (hasUnprocessedPlaceholder) {
-    return {
-      valid: false,
-      reason: `Client "${expectedClient.clientId}" has unprocessed placeholders in webOrigins: ${JSON.stringify(actualClient.webOrigins)}`,
-    };
-  }
-
-  console.log(
-    `    [PASS] Web origins processed correctly: ${JSON.stringify(actualClient.webOrigins)}`,
+    `    [PASS] ${displayName} processed correctly: ${JSON.stringify(actualClient[propertyName])}`,
   );
   return { valid: true };
 }

@@ -11,16 +11,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "test": "jest --reporters jest-silent-reporter",
-    "test:lambda": "jest -c jest.config.js --selectProjects keycloak-lambda",
-    "test:coverage": "jest --coverage",
-    "cdk": "cdk",
-    "synth": "cdk synth",
-    "deploy": "cdk synth && cdk deploy --require-approval never",
-    "format": "prettier --write \"**/*.{ts,js}\"",
-    "format:check": "prettier --check \"**/*.{ts,js}\"",
-    "lint": "eslint --max-warnings 10 --fix --ext .js,.ts .",
-    "lint:check": "eslint --max-warnings 10 --ext .js,.ts ."
+    "test": "jest",
+    "cdk": "cdk"
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.848.0",
@@ -42,7 +34,6 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "globals": "^15.14.0",
     "jest": "^30.0.5",
-    "jest-silent-reporter": "^0.6.0",
     "prettier": "^3.6.2",
     "source-map-support": "^0.5.21",
     "ts-jest": "^29.4.0",

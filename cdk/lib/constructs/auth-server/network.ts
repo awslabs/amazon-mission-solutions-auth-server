@@ -7,10 +7,8 @@ import {
   FlowLogDestination,
   FlowLogTrafficType,
   ISecurityGroup,
-  ISubnet,
   IVpc,
   SecurityGroup,
-  SubnetSelection,
   SubnetType,
   Vpc,
 } from 'aws-cdk-lib/aws-ec2';
@@ -139,11 +137,6 @@ export class Network extends Construct {
   public readonly vpc: IVpc;
 
   /**
-   * Selected subnets for resource deployment.
-   */
-  public readonly selectedSubnets: SubnetSelection;
-
-  /**
    * Security group for application resources.
    */
   public readonly securityGroup: ISecurityGroup;
@@ -171,9 +164,6 @@ export class Network extends Construct {
 
     // Resolve security group
     this.securityGroup = this.resolveSecurityGroup();
-
-    // Resolve subnet selection
-    this.selectedSubnets = this.resolveSubnets();
   }
 
   /**
@@ -263,32 +253,5 @@ export class Network extends Construct {
       description: 'Security group for auth server resources',
       allowAllOutbound: true,
     });
-  }
-
-  /**
-   * Resolves the subnet selection based on configuration.
-   *
-   * Resolution order:
-   * 1. Select specific subnets if config.TARGET_SUBNETS is provided
-   * 2. Select all private subnets with egress
-   *
-   * @returns The subnet selection configuration
-   */
-  private resolveSubnets(): SubnetSelection {
-    // Option 1: Select specific subnets by ID
-    if (this.config.TARGET_SUBNETS && this.config.TARGET_SUBNETS.length > 0) {
-      return {
-        subnets: this.config.TARGET_SUBNETS.map(subnetId =>
-          this.vpc
-            .selectSubnets({ subnetFilters: [] })
-            .subnets.find(subnet => subnet.subnetId === subnetId),
-        ).filter((subnet): subnet is ISubnet => subnet !== undefined),
-      };
-    }
-
-    // Option 2: Select all private subnets with egress
-    return {
-      subnetType: SubnetType.PRIVATE_WITH_EGRESS,
-    };
   }
 }

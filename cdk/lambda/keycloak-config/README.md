@@ -2,7 +2,7 @@
 
 This Lambda function provides automated post-deployment configuration for Keycloak authentication servers. It eliminates the need for manual setup through the admin console by programmatically configuring realms, clients, users, and roles.
 
-> **Note**: This Lambda is only deployed if the optional `auth-config.json` configuration file is present at the time of initial deployment. Without this file, the CDK stack creates a fresh Keycloak installation with only the master realm.
+> **Note**: This Lambda is only deployed if `KEYCLOAK_AUTH_CONFIG` is present in `deployment.json` at the time of initial deployment. Without this configuration, the CDK stack creates a fresh Keycloak installation with only the master realm.
 
 ## Functionality
 
@@ -21,7 +21,8 @@ The function code is organized into focused modules:
 
 - **`index.js`** - Main Lambda handler and workflow orchestration
 - **`config.js`** - Environment variable validation and configuration parsing
-- **`aws-utils.js`** - AWS SDK utilities (Secrets Manager, Parameter Store)
+- **`config-validation.js`** - Configuration validation after deployment
+- **`aws-utils.js`** - AWS SDK utilities (Secrets Manager)
 - **`health-check.js`** - Keycloak server health monitoring and readiness checks
 - **`keycloak-api.js`** - Keycloak Admin REST API client implementation
 - **`utils.js`** - Retry logic, error handling, and validation utilities
@@ -64,7 +65,6 @@ The Lambda interacts with Keycloak's Admin REST API for:
 ### AWS Services Integration
 
 - **Secrets Manager**: Retrieval of admin credentials and user passwords
-- **Parameter Store**: Optional storage of configuration parameters
 - **CloudFormation**: Custom Resource integration for deployment automation
 
 ## Error Handling and Security
@@ -113,11 +113,10 @@ aws lambda invoke \
 
 ## Dependencies
 
-| Package       | Version  | Purpose                                   |
-| ------------- | -------- | ----------------------------------------- |
-| `aws-sdk`     | Latest   | AWS service integration (Secrets Manager) |
-| `axios`       | ^1.x     | HTTP client for Keycloak API requests     |
-| `querystring` | Built-in | URL encoding for form data                |
+| Package                           | Version | Purpose                               |
+| --------------------------------- | ------- | ------------------------------------- |
+| `@aws-sdk/client-secrets-manager` | ^3.x    | AWS Secrets Manager integration       |
+| `axios`                           | ^1.x    | HTTP client for Keycloak API requests |
 
 ## Development and Testing
 

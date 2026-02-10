@@ -3,15 +3,7 @@
  */
 
 import { Duration } from 'aws-cdk-lib';
-import {
-  InstanceClass,
-  InstanceSize,
-  InstanceType,
-  IVpc,
-  Port,
-  SecurityGroup,
-  SubnetType,
-} from 'aws-cdk-lib/aws-ec2';
+import { InstanceType, IVpc, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import {
   AuroraMysqlEngineVersion,
   ClusterInstance,
@@ -42,9 +34,9 @@ export class Database extends Construct {
   constructor(scope: Construct, id: string, props: DatabaseProps) {
     super(scope, id);
 
-    const projectName = props.projectName || 'keycloak';
-    const databaseInstanceType = props.databaseInstanceType || 'r5.large';
-    const isProd = props.isProd || false;
+    const projectName = props.projectName ?? 'keycloak';
+    const databaseInstanceType = props.databaseInstanceType ?? 'r5.large';
+    const isProd = props.isProd ?? false;
 
     this.dbSecurityGroup = new SecurityGroup(this, 'DBSecurityGroup', {
       vpc: props.vpc,
@@ -75,10 +67,7 @@ export class Database extends Construct {
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
     });
 
-    const instanceType = InstanceType.of(
-      InstanceClass.R5,
-      this.getInstanceSize(databaseInstanceType),
-    );
+    const instanceType = new InstanceType(databaseInstanceType);
 
     this.databaseCluster = new DatabaseCluster(this, 'DBCluster', {
       engine: DatabaseClusterEngine.auroraMysql({
@@ -114,34 +103,5 @@ export class Database extends Construct {
       Port.tcp(3306),
       'Allow MySQL connections from self',
     );
-  }
-
-  private getInstanceSize(instanceType: string): InstanceSize {
-    const sizePart = instanceType.split('.')[1];
-
-    switch (sizePart) {
-      case 'large':
-        return InstanceSize.LARGE;
-      case 'xlarge':
-        return InstanceSize.XLARGE;
-      case '2xlarge':
-        return InstanceSize.XLARGE2;
-      case '4xlarge':
-        return InstanceSize.XLARGE4;
-      case '8xlarge':
-        return InstanceSize.XLARGE8;
-      case '12xlarge':
-        return InstanceSize.XLARGE12;
-      case '16xlarge':
-        return InstanceSize.XLARGE16;
-      case '24xlarge':
-        return InstanceSize.XLARGE24;
-      case 'small':
-        return InstanceSize.SMALL;
-      case 'medium':
-        return InstanceSize.MEDIUM;
-      default:
-        return InstanceSize.LARGE;
-    }
   }
 }

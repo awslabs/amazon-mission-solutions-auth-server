@@ -59,11 +59,11 @@ export class KeycloakConfig extends Construct {
   constructor(scope: Construct, id: string, props: KeycloakConfigProps) {
     super(scope, id);
 
-    const projectName = props.projectName || 'keycloak';
-    const keycloakAdminUsername = props.keycloakAdminUsername || 'keycloak';
+    const projectName = props.projectName ?? 'keycloak';
+    const keycloakAdminUsername = props.keycloakAdminUsername ?? 'keycloak';
     const generateUserPasswords = props.generateUserPasswords !== false;
-    const websiteUri = props.websiteUri || '*';
-    const isProd = props.account.prodLike || false;
+    const websiteUri = props.websiteUri ?? '*';
+    const isProd = props.account.prodLike ?? false;
 
     // Create Lambda roles using the dedicated construct
     this.lambdaRoles = new LambdaRoles(this, 'Roles', {
@@ -146,7 +146,6 @@ export class KeycloakConfig extends Construct {
               'cp -r /asset-input/* /asset-output/',
               'cd /asset-output',
               'npm install --omit=dev',
-              'rm -rf node_modules/aws-sdk',
             ].join(' && '),
           ],
         },

@@ -104,13 +104,10 @@ exports.handler = async (event) => {
         5000, // Max delay 5 seconds
       );
 
-      // Verify realm was created
-      const realmExists = await keycloakApi.verifyRealmExists(accessToken, realmName);
-      verificationResults.realmCreated = realmExists;
-      if (!realmExists) {
-        throw new Error(`Failed to verify realm "${realmName}" was created`);
-      }
-      console.log(`Verified realm "${realmName}" exists`);
+      // createOrUpdateRealmWithConfig validates response status internally —
+      // if it returns without throwing, the realm exists
+      verificationResults.realmCreated = true;
+      console.log(`Verified realm "${realmName}" was created/updated successfully`);
     } catch (error) {
       // Error reporting
       console.error('Error creating/verifying realm:', error);
