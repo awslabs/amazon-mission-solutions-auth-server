@@ -48,7 +48,13 @@ cdk/
 │       └── keycloak-config-loader.ts # Keycloak auth config loader
 ├── lambda/                       # Lambda function code
 │   └── keycloak-config/          # Keycloak configuration Lambda
-├── test/                         # Jest tests for CDK constructs
+├── scripts/                      # Utility scripts
+│   └── run-integration-tests.sh  # Pre-flight wrapper for integration tests
+├── test/                         # Jest tests
+│   ├── *.test.ts                 # CDK construct and stack tests
+│   └── integration/              # Integration tests (requires deployed stack)
+│       ├── helpers.ts            # AWS + Keycloak helper functions
+│       └── auth-server.integration.test.ts
 ├── cdk.json                      # CDK configuration
 └── package.json                  # Node.js dependencies
 ```
@@ -593,8 +599,14 @@ The AuthServerStack depends on NetworkStack. If you see dependency errors:
 # Build TypeScript
 npm run build
 
-# Run all tests
+# Run unit/CDK tests (default — does not include integration tests)
 npm test
+
+# Run integration tests (requires deployed stack + AWS credentials)
+npm run test:integration
+
+# Run all tests (unit + integration)
+npm run test:all
 
 # Watch mode for development
 npm run watch
@@ -614,14 +626,20 @@ These commands can be run directly with `npx`:
 # Run only Lambda tests
 npx jest --selectProjects keycloak-lambda
 
+# Run integration tests directly
+npx jest --selectProjects integration --no-coverage
+
+# Run integration tests via wrapper script (includes pre-flight checks)
+./scripts/run-integration-tests.sh
+
 # Run tests with coverage
 npx jest --coverage
 
 # Lint code (with auto-fix)
-npx eslint --max-warnings 10 --fix "**/*.{js,ts}"
+npx eslint --max-warnings 0 --fix "**/*.{js,ts}"
 
 # Check linting (no auto-fix)
-npx eslint --max-warnings 10 "**/*.{js,ts}"
+npx eslint --max-warnings 0 "**/*.{js,ts}"
 
 # Format code
 npx prettier --write "**/*.{ts,js}"
@@ -632,13 +650,14 @@ npx prettier --check "**/*.{ts,js}"
 
 ### Testing
 
-The project includes comprehensive tests:
+The project includes three test suites:
 
-- **CDK Infrastructure Tests** (`test/`): Stack and construct tests
-- **Lambda Unit Tests** (`lambda/keycloak-config/test/`): Keycloak configuration Lambda tests
+- **CDK Infrastructure Tests** (`test/*.test.ts`): Stack and construct assertions using CDK `Template`
+- **Lambda Unit Tests** (`lambda/keycloak-config/test/`): Keycloak configuration Lambda tests with mocked AWS SDK
+- **Integration Tests** (`test/integration/`): End-to-end verification against a deployed Keycloak instance
 
 ```bash
-# Run all tests
+# Run unit/CDK tests (default)
 npm test
 
 # Run specific test file
@@ -647,6 +666,44 @@ npm test -- auth-server-stack.test.ts
 # Run with verbose output
 npm test -- --verbose
 ```
+
+#### Integration Tests
+
+The integration tests verify a deployed auth server is healthy and functioning. They read `deployment.json` to determine the target environment, then query CloudFormation stack exports and Secrets Manager for all connection details. No environment-specific values are hardcoded.
+
+**What they test:**
+
+| Test                  | Description                                                              |
+| --------------------- | ------------------------------------------------------------------------ |
+| Health check          | Keycloak URL returns HTTP 200 or 302                                     |
+| Admin credentials     | Obtains an admin token from the master realm                             |
+| Realm configuration   | Realm exists and is enabled (per `KEYCLOAK_AUTH_CONFIG`)                 |
+| Client configuration  | Each configured client exists with correct settings                      |
+| User configuration    | Each configured user exists and is enabled                               |
+| OIDC Auth Code + PKCE | Full browser-simulated login flow returns access, refresh, and ID tokens |
+| JWKS verification     | Access token signature validates against the Keycloak JWKS endpoint      |
+| Userinfo              | Userinfo endpoint returns the expected username                          |
+
+**Prerequisites:**
+
+- A deployed auth server stack (both Network and Dataplane)
+- `bin/deployment/deployment.json` configured to match the deployed environment
+- Valid AWS credentials with access to CloudFormation and Secrets Manager
+
+**Running:**
+
+```bash
+# Via npm script
+npm run test:integration
+
+# Via wrapper script (includes pre-flight checks for creds, config, and reachability)
+./scripts/run-integration-tests.sh
+```
+
+**Conditional skip behavior:**
+
+- Realm, client, and user tests skip if `KEYCLOAK_AUTH_CONFIG` is not set in `deployment.json`
+- OIDC tests skip if there is no public client with `standardFlowEnabled` and a user with `generatePassword: true`
 
 ### Adding Features
 

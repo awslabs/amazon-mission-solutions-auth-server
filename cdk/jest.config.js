@@ -15,8 +15,8 @@ module.exports = {
   transformIgnorePatterns: ['/node_modules/'],
   // Exclude cdk.out and other build artifacts from module resolution
   modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
-  // Exclude cdk.out from test discovery
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
+  // Exclude cdk.out and integration tests from default test discovery
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/', '<rootDir>/test/integration/'],
   collectCoverage: true,
   collectCoverageFrom: [
     'lambda/keycloak-config/src/**/*.js',
@@ -24,6 +24,7 @@ module.exports = {
     '!lambda/keycloak-config/test/**',
     '!lambda/**/node_modules/**',
     '!**/node_modules/**',
+    '!test/integration/**',
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
@@ -52,7 +53,7 @@ module.exports = {
         '^.+\\.tsx?$': 'ts-jest',
       },
       modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
-      testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
+      testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/', '<rootDir>/test/integration/'],
     },
     {
       displayName: 'keycloak-lambda',
@@ -68,6 +69,15 @@ module.exports = {
         '<rootDir>/cdk.out/',
       ],
       modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+    },
+    {
+      displayName: 'integration',
+      testMatch: ['<rootDir>/test/integration/**/*.integration.test.ts'],
+      transform: {
+        '^.+\\.tsx?$': 'ts-jest',
+      },
+      modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+      testTimeout: 60000,
     },
   ],
   verbose: true,
