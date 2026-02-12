@@ -3,6 +3,8 @@ cdk.context.json
 cdk-outputs.json
 .cdk.staging
 **/cdk.out/
+cdk/.cdk-nag-suppressions-temp.json
+cdk/cdk-nag-suppressions-report.txt
 
 # Dependencies
 **/node_modules/

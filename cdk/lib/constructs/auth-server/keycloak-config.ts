@@ -12,6 +12,7 @@ import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Provider } from 'aws-cdk-lib/custom-resources';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { copySync } from 'fs-extra';
 
@@ -108,9 +109,11 @@ export class KeycloakConfig extends Construct {
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
+    logGroup.grantWrite(this.lambdaRoles.configLambdaRole);
+
     this.configFunction = new Function(this, 'Function', {
       functionName: `${projectName}-AuthConfigLambdaFunction`,
-      runtime: Runtime.NODEJS_22_X,
+      runtime: Runtime.NODEJS_24_X,
       handler: 'index.handler',
       role: this.lambdaRoles.configLambdaRole,
       vpc: props.vpc,
@@ -136,7 +139,7 @@ export class KeycloakConfig extends Construct {
               }
             },
           },
-          image: Runtime.NODEJS_22_X.bundlingImage,
+          image: Runtime.NODEJS_24_X.bundlingImage,
           command: [
             'bash',
             '-c',
@@ -186,6 +189,8 @@ export class KeycloakConfig extends Construct {
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
+    providerLogGroup.grantWrite(this.lambdaRoles.providerRole);
+
     const provider = new Provider(this, 'Provider', {
       onEventHandler: this.configFunction,
       logGroup: providerLogGroup,
@@ -202,5 +207,48 @@ export class KeycloakConfig extends Construct {
     });
 
     this.customResource.node.addDependency(provider);
+
+    // CDK-NAG suppressions
+    this.userPasswordSecrets.forEach(secret => {
+      NagSuppressions.addResourceSuppressions(secret, [
+        {
+          id: 'AwsSolutions-SMG4',
+          reason:
+            'User password secrets are generated at deployment time for Keycloak user provisioning. Rotation is not applicable as passwords are managed through Keycloak.',
+        },
+      ]);
+    });
+
+    NagSuppressions.addResourceSuppressions(
+      provider,
+      [
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'The CDK Provider framework Lambda runtime is managed by the CDK framework and cannot be directly controlled.',
+        },
+      ],
+      true,
+    );
+
+    // Suppress IAM5 on the provider role after the Provider construct has been created,
+    // because the Provider's grantInvoke creates a DefaultPolicy on the role with
+    // lambda:InvokeFunction on <FunctionArn>:* (version/alias wildcard).
+    NagSuppressions.addResourceSuppressions(
+      this.lambdaRoles.providerRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'The CDK Provider framework grants lambda:InvokeFunction on the config function ARN with a version/alias wildcard suffix (:*). This is managed by the CDK framework.',
+          appliesTo: [
+            {
+              regex: '/^Resource::.*\\.Arn>:\\*$/g',
+            },
+          ],
+        },
+      ],
+      true,
+    );
   }
 }

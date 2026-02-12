@@ -2,14 +2,20 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { App, Stack } from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { App, Aspects, Stack } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { Vpc } from 'aws-cdk-lib/aws-ec2';
+import { AwsSolutionsChecks } from 'cdk-nag';
 
-import { DeploymentConfig } from '../bin/deployment/load-deployment';
 import { Network, NetworkConfig } from '../lib/constructs/auth-server/network';
 import { OSMLAccount } from '../lib/constructs/types';
 import { NetworkStack } from '../lib/network-stack';
+import {
+  createTestApp,
+  createTestDeploymentConfig,
+  createTestEnvironment,
+  generateNagReport,
+} from './test-utils';
 
 /**
  * Creates a test OSMLAccount configuration.
@@ -21,24 +27,6 @@ function createTestAccount(overrides?: Partial<OSMLAccount>): OSMLAccount {
     prodLike: false,
     isAdc: false,
     ...overrides,
-  };
-}
-
-/**
- * Creates a test DeploymentConfig.
- */
-function createTestDeploymentConfig(overrides?: Partial<DeploymentConfig>): DeploymentConfig {
-  return {
-    projectName: 'test-project',
-    account: {
-      id: '123456789012',
-      region: 'us-west-2',
-      prodLike: false,
-      isAdc: false,
-      ...overrides?.account,
-    },
-    networkConfig: overrides?.networkConfig,
-    dataplaneConfig: overrides?.dataplaneConfig,
   };
 }
 
@@ -405,5 +393,47 @@ describe('NetworkStack', () => {
 
     // Should use the provided VPC prop
     expect(stack.network.vpc).toBe(providedVpc);
+  });
+});
+
+describe('cdk-nag Compliance Checks - NetworkStack', () => {
+  let stack: NetworkStack;
+
+  beforeAll(() => {
+    const app = createTestApp();
+    const env = createTestEnvironment();
+
+    stack = new NetworkStack(app, 'NagNetworkStack', {
+      env,
+      deployment: createTestDeploymentConfig(),
+    });
+
+    Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    generateNagReport(stack, errors, warnings);
+  });
+
+  test('No unsuppressed Errors', () => {
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test('No unsuppressed Warnings', () => {
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(warnings).toHaveLength(0);
   });
 });

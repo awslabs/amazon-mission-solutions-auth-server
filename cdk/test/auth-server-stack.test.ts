@@ -2,35 +2,20 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { App, Stack } from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { App, Aspects, Stack } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { SecurityGroup, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { AwsSolutionsChecks } from 'cdk-nag';
 
 import { DeploymentConfig } from '../bin/deployment/load-deployment';
 import { AuthServerStack } from '../lib/auth-server-stack';
-
-/**
- * Creates a test DeploymentConfig.
- */
-function createTestDeploymentConfig(
-  overrides?: Partial<DeploymentConfig> & { projectName?: string },
-): DeploymentConfig {
-  return {
-    projectName: overrides?.projectName ?? 'test-auth-server',
-    account: {
-      id: '123456789012',
-      region: 'us-west-2',
-      prodLike: false,
-      isAdc: false,
-      ...overrides?.account,
-    },
-    networkConfig: overrides?.networkConfig,
-    dataplaneConfig: {
-      DOMAIN_INTERNET_FACING: false, // Default to internal for tests
-      ...overrides?.dataplaneConfig,
-    },
-  };
-}
+import {
+  createTestApp,
+  createTestDeploymentConfig,
+  createTestEnvironment,
+  createTestVpc,
+  generateNagReport,
+} from './test-utils';
 
 describe('AuthServerStack', () => {
   let app: App;
@@ -333,5 +318,68 @@ describe('AuthServerStack', () => {
         Description: 'ARN of the Keycloak admin credentials secret',
       });
     });
+  });
+});
+
+describe('cdk-nag Compliance Checks - AuthServerStack', () => {
+  let stack: AuthServerStack;
+
+  beforeAll(() => {
+    const app = createTestApp();
+    const env = createTestEnvironment();
+    const vpcStack = new Stack(app, 'NagVpcStack', { env });
+    const testVpc = createTestVpc(vpcStack);
+
+    stack = new AuthServerStack(app, 'NagAuthServerStack', {
+      env,
+      deployment: createTestDeploymentConfig({
+        dataplaneConfig: {
+          DOMAIN_INTERNET_FACING: false,
+          BACKTRACK_WINDOW_SECONDS: 3600,
+          DATABASE_PORT: 3307,
+          KEYCLOAK_AUTH_CONFIG: {
+            realm: 'test-realm',
+            enabled: true,
+            clients: [],
+            users: [
+              {
+                username: 'testuser',
+                generatePassword: true,
+                email: 'test@example.com',
+              },
+            ],
+          },
+        },
+      }),
+      vpc: testVpc,
+    });
+
+    Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    generateNagReport(stack, errors, warnings);
+  });
+
+  test('No unsuppressed Errors', () => {
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test('No unsuppressed Warnings', () => {
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(warnings).toHaveLength(0);
   });
 });

@@ -102,17 +102,7 @@ export class ECSRoles extends Construct {
       resources: ['*'],
     });
 
-    // CloudWatch Logs permissions
-    const cwLogsPolicyStatement = new PolicyStatement({
-      sid: 'CloudWatchLogs',
-      effect: Effect.ALLOW,
-      actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [
-        `arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-      ],
-    });
-
-    taskPolicy.addStatements(ssmPolicyStatement, cwLogsPolicyStatement);
+    taskPolicy.addStatements(ssmPolicyStatement);
 
     taskRole.addManagedPolicy(taskPolicy);
 
@@ -125,14 +115,6 @@ export class ECSRoles extends Construct {
           reason:
             'SSM and SSM Messages permissions require wildcard for ECS Exec functionality to work with dynamic session channels.',
           appliesTo: ['Resource::*'],
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'CloudWatch Logs log-group wildcard allows ECS tasks to create and write to log groups dynamically.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-          ],
         },
       ],
       true,
@@ -181,21 +163,7 @@ export class ECSRoles extends Construct {
       ],
     });
 
-    // CloudWatch Logs permissions
-    const cwLogsPolicyStatement = new PolicyStatement({
-      sid: 'CloudWatchLogs',
-      effect: Effect.ALLOW,
-      actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [
-        `arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-      ],
-    });
-
-    executionPolicy.addStatements(
-      ecrAuthPolicyStatement,
-      ecrPolicyStatement,
-      cwLogsPolicyStatement,
-    );
+    executionPolicy.addStatements(ecrAuthPolicyStatement, ecrPolicyStatement);
 
     executionRole.addManagedPolicy(executionPolicy);
 
@@ -214,14 +182,6 @@ export class ECSRoles extends Construct {
             'ECR repository wildcard needed for pulling images from various repositories including public Keycloak images.',
           appliesTo: [
             `Resource::arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
-          ],
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'CloudWatch Logs log-group wildcard allows ECS tasks to create and write to log groups dynamically.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
           ],
         },
       ],

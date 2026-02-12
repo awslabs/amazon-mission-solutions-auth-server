@@ -12,6 +12,7 @@ import { ISecurityGroup, IVpc, Port, SecurityGroup } from 'aws-cdk-lib/aws-ec2';
 import { ARecord, HostedZone, IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { KeycloakCustomConfig } from '../../utils/keycloak-config-loader';
@@ -83,6 +84,19 @@ export class DataplaneConfig extends BaseConfig {
   DATABASE_INSTANCE_TYPE?: string;
 
   /**
+   * Aurora MySQL backtrack window in seconds (enables point-in-time rewind).
+   * Max 72 hours (259200). Only supported for Aurora MySQL; set to 0 or omit to disable.
+   * @default undefined (disabled)
+   */
+  BACKTRACK_WINDOW_SECONDS?: number;
+
+  /**
+   * RDS database port. Use a non-default port for NAG RDS11 compliance.
+   * @default 3306
+   */
+  DATABASE_PORT?: number;
+
+  /**
    * Hostname for the Keycloak service (e.g., "auth.example.com").
    * Required for proper Keycloak URL configuration.
    */
@@ -136,6 +150,7 @@ export class DataplaneConfig extends BaseConfig {
     this.ECS_CPU_UTILIZATION_TARGET = this.ECS_CPU_UTILIZATION_TARGET ?? 75;
     this.JAVA_OPTS = this.JAVA_OPTS ?? '-server -Xms1024m -Xmx1638m';
     this.DATABASE_INSTANCE_TYPE = this.DATABASE_INSTANCE_TYPE ?? 'r5.large';
+    this.DATABASE_PORT = this.DATABASE_PORT ?? 3306;
     this.DOMAIN_INTERNET_FACING = this.DOMAIN_INTERNET_FACING ?? true;
   }
 }
@@ -325,18 +340,30 @@ export class Dataplane extends Construct {
       },
     });
 
+    NagSuppressions.addResourceSuppressions(keycloakAdminSecret, [
+      {
+        id: 'AwsSolutions-SMG4',
+        reason:
+          'Keycloak admin secret rotation is not configured. The admin password is set at initial deployment and managed manually.',
+      },
+    ]);
+
+    const databasePort = this.config.DATABASE_PORT ?? 3306;
+
     // Create database construct
     this.database = new Database(this, 'Database', {
       vpc: props.vpc,
       projectName: projectName,
       databaseInstanceType: this.config.DATABASE_INSTANCE_TYPE,
       isProd: isProd,
+      backtrackWindowSeconds: this.config.BACKTRACK_WINDOW_SECONDS,
+      port: databasePort,
     });
 
     // Configure security group ingress for database access
     this.database.dbSecurityGroup.addIngressRule(
       props.securityGroup,
-      Port.tcp(3306),
+      Port.tcp(databasePort),
       'Allow MySQL connections from application security group',
     );
 
@@ -346,6 +373,7 @@ export class Dataplane extends Construct {
       projectName: projectName,
       vpc: props.vpc,
       databaseHost: this.database.databaseCluster.clusterEndpoint.hostname,
+      databasePort: databasePort,
       databaseSecret: this.database.databaseSecret,
       keycloakSecret: keycloakAdminSecret,
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
@@ -364,7 +392,7 @@ export class Dataplane extends Construct {
     // Allow Keycloak service to connect to database
     this.database.dbSecurityGroup.addIngressRule(
       this.keycloakService.serviceSecurityGroup,
-      Port.tcp(3306),
+      Port.tcp(databasePort),
       'Allow MySQL connections from Keycloak service',
     );
 

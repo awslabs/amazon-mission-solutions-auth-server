@@ -85,16 +85,6 @@ export class LambdaRoles extends Construct {
       managedPolicyName: `${props.configLambdaRoleName}-policy`,
     });
 
-    // CloudWatch Logs permissions for Lambda execution
-    const cwLogsPolicyStatement = new PolicyStatement({
-      sid: 'CloudWatchLogs',
-      effect: Effect.ALLOW,
-      actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [
-        `arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-      ],
-    });
-
     // VPC permissions for Lambda to create network interfaces
     const vpcPolicyStatement = new PolicyStatement({
       sid: 'VPCNetworkInterface',
@@ -109,7 +99,7 @@ export class LambdaRoles extends Construct {
       resources: ['*'],
     });
 
-    policy.addStatements(cwLogsPolicyStatement, vpcPolicyStatement);
+    policy.addStatements(vpcPolicyStatement);
 
     role.addManagedPolicy(policy);
 
@@ -117,14 +107,6 @@ export class LambdaRoles extends Construct {
     NagSuppressions.addResourceSuppressions(
       policy,
       [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'CloudWatch Logs log-group wildcard allows Lambda to create and write to log groups dynamically.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-          ],
-        },
         {
           id: 'AwsSolutions-IAM5',
           reason:
@@ -151,58 +133,6 @@ export class LambdaRoles extends Construct {
       description:
         'Allows the Auth Server CloudFormation Provider Lambda to invoke the config Lambda',
     });
-
-    const policy = new ManagedPolicy(this, 'ProviderPolicy', {
-      managedPolicyName: `${props.providerRoleName}-policy`,
-    });
-
-    // CloudWatch Logs permissions
-    const cwLogsPolicyStatement = new PolicyStatement({
-      sid: 'CloudWatchLogs',
-      effect: Effect.ALLOW,
-      actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
-      resources: [
-        `arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-      ],
-    });
-
-    // Lambda invoke permissions - will be scoped to specific function ARN when used
-    const lambdaInvokePolicyStatement = new PolicyStatement({
-      sid: 'LambdaInvoke',
-      effect: Effect.ALLOW,
-      actions: ['lambda:InvokeFunction'],
-      resources: [
-        `arn:${this.partition}:lambda:${props.account.region}:${props.account.id}:function:*`,
-      ],
-    });
-
-    policy.addStatements(cwLogsPolicyStatement, lambdaInvokePolicyStatement);
-
-    role.addManagedPolicy(policy);
-
-    // Add NAG suppressions
-    NagSuppressions.addResourceSuppressions(
-      policy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'CloudWatch Logs log-group wildcard allows Lambda to create and write to log groups dynamically.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:logs:${props.account.region}:${props.account.id}:log-group:*`,
-          ],
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Lambda invoke wildcard scoped to account allows provider to invoke config Lambda functions.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:lambda:${props.account.region}:${props.account.id}:function:*`,
-          ],
-        },
-      ],
-      true,
-    );
 
     return role;
   }
