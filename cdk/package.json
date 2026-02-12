@@ -11,7 +11,9 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "test": "jest",
+    "test": "jest --selectProjects cdk keycloak-lambda",
+    "test:integration": "jest --selectProjects integration --no-coverage",
+    "test:all": "jest",
     "cdk": "cdk"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "globals": "^15.14.0",
     "jest": "^30.0.5",
+    "jose": "^5.10.0",
     "prettier": "^3.6.2",
     "source-map-support": "^0.5.21",
     "ts-jest": "^29.4.0",
