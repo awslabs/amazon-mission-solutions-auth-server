@@ -2,8 +2,8 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { Duration, RemovalPolicy } from 'aws-cdk-lib';
-import { IVpc, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
+import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { IVpc, Peer, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import {
   Cluster,
   ContainerImage,
@@ -24,7 +24,9 @@ import {
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { IRole } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -41,6 +43,8 @@ export interface KeycloakServiceProps {
   vpc: IVpc;
   /** The database host endpoint. */
   databaseHost: string;
+  /** The database port. */
+  databasePort?: number;
   /** The database credentials secret. */
   databaseSecret: ISecret;
   /** The Keycloak admin credentials secret. */
@@ -150,6 +154,23 @@ export class KeycloakService extends Construct {
       deletionProtection: isProd,
     });
 
+    const bucketSuffix = `-auth-alb-access-logs-${Stack.of(this).account}-${Stack.of(this).region}`;
+    const maxProjectNameLength = 63 - bucketSuffix.length;
+    const truncatedProjectName = projectName.slice(0, maxProjectNameLength);
+
+    const accessLogBucket = new Bucket(this, 'ALBAccessLogBucket', {
+      bucketName: `${truncatedProjectName}${bucketSuffix}`.toLowerCase(),
+      encryption: BucketEncryption.S3_MANAGED,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      objectOwnership: ObjectOwnership.BUCKET_OWNER_PREFERRED,
+      enforceSSL: true,
+      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+      autoDeleteObjects: !isProd,
+      lifecycleRules: [{ expiration: Duration.days(90) }],
+    });
+
+    this.loadBalancer.logAccessLogs(accessLogBucket);
+
     // Determine the hostname for Keycloak:
     // - If hostname is provided, use it (works for both public and internal with custom hostname)
     // - If hostname is not provided (internal without custom hostname), use ALB DNS
@@ -160,14 +181,16 @@ export class KeycloakService extends Construct {
         : `http://${props.hostname}`
       : `http://${this.loadBalancer.loadBalancerDnsName}`;
 
+    const databasePort = props.databasePort ?? 3306;
     const environmentVars: { [key: string]: string } = {
       KC_DB: 'mysql',
       KC_DB_URL_DATABASE: 'keycloak',
       KC_DB_URL_HOST: props.databaseHost,
-      KC_DB_URL_PORT: '3306',
+      KC_DB_URL_PORT: String(databasePort),
       KC_DB_USERNAME: 'admin',
       KC_HOSTNAME: keycloakHostname,
       KC_HOSTNAME_URL: this.keycloakUrl,
+      KC_HOSTNAME_STRICT_BACKCHANNEL: 'true',
       KC_PROXY_ADDRESS_FORWARDING: 'true',
       KC_PROXY_HEADERS: 'xforwarded',
       KC_CACHE_CONFIG_FILE: 'cache-ispn-jdbc-ping.xml',
@@ -176,7 +199,8 @@ export class KeycloakService extends Construct {
       _JAVA_OPTIONS: '-Djdk.net.preferIPv4Stack=true -Djdk.net.preferIPv4Addresses=true',
     };
 
-    // Escape XML for shell embedding so ${env.*} placeholders are written literally for Infinispan.
+    // Read Infinispan XML template from file, escape for shell embedding.
+    // Escape $ so ${env.*} in XML are written literally (Infinispan resolves them at runtime).
     const infinispanXml = readFileSync(join(__dirname, 'cache-ispn-jdbc-ping.xml'), 'utf8')
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
@@ -246,6 +270,7 @@ export class KeycloakService extends Construct {
       stickinessCookieDuration: Duration.days(7),
     });
 
+    const listenerOpen = internetFacing;
     if (props.certificateArn) {
       this.loadBalancer.addListener('HttpsListener', {
         port: 443,
@@ -253,13 +278,30 @@ export class KeycloakService extends Construct {
         certificates: [{ certificateArn: props.certificateArn }],
         defaultTargetGroups: [targetGroup],
         sslPolicy: SslPolicy.TLS12,
+        open: listenerOpen,
       });
     } else {
       this.loadBalancer.addListener('HttpListener', {
         port: 80,
         protocol: ApplicationProtocol.HTTP,
         defaultTargetGroups: [targetGroup],
+        open: listenerOpen,
       });
+    }
+    if (!internetFacing) {
+      if (props.certificateArn) {
+        this.loadBalancer.connections.allowFrom(
+          Peer.ipv4(props.vpc.vpcCidrBlock),
+          Port.tcp(443),
+          'Allow HTTPS from VPC when internal',
+        );
+      } else {
+        this.loadBalancer.connections.allowFrom(
+          Peer.ipv4(props.vpc.vpcCidrBlock),
+          Port.tcp(80),
+          'Allow HTTP from VPC when internal',
+        );
+      }
     }
 
     this.service = new FargateService(this, 'Service', {
@@ -287,5 +329,48 @@ export class KeycloakService extends Construct {
       targetUtilizationPercent: autoScalingTargetCpuUtilization,
       policyName: `${projectName}-auth-cpu-scaling`,
     });
+
+    // CDK-NAG suppressions
+    NagSuppressions.addResourceSuppressions(taskDef, [
+      {
+        id: 'AwsSolutions-ECS2',
+        reason:
+          'Environment variables contain non-sensitive Keycloak configuration (database host, ports, cache config). Sensitive values are injected via ECS secrets from Secrets Manager.',
+      },
+    ]);
+
+    NagSuppressions.addResourceSuppressions(
+      this.loadBalancer,
+      [
+        {
+          id: 'AwsSolutions-EC23',
+          reason: internetFacing
+            ? 'The ALB security group allows inbound access from 0.0.0.0/0 to serve authentication traffic. Access is restricted to HTTP/HTTPS ports only.'
+            : 'When internal, access is restricted to VPC CIDR via allowFrom; cdk-nag cannot validate token-based CIDR (vpc.vpcCidrBlock) and throws CdkNagValidationFailure.',
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(accessLogBucket, [
+      {
+        id: 'AwsSolutions-S1',
+        reason:
+          'This is the ALB access logging destination bucket. Enabling server access logging on it would create an infinite logging loop.',
+      },
+    ]);
+
+    NagSuppressions.addResourceSuppressions(
+      this.ecsRoles.taskRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'ECS Exec (enableExecuteCommand) requires KMS Decrypt with wildcard resource for SSM session encryption. This is a CDK-managed default policy.',
+          appliesTo: ['Resource::*'],
+        },
+      ],
+      true,
+    );
   }
 }

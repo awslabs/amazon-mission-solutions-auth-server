@@ -54,6 +54,7 @@ module.exports = {
       },
       modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
       testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/', '<rootDir>/test/integration/'],
+      globalTeardown: '<rootDir>/test/test-utils.ts',
     },
     {
       displayName: 'keycloak-lambda',

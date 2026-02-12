@@ -2,13 +2,20 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { App, Stack } from 'aws-cdk-lib';
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { App, Aspects, Stack } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { SecurityGroup, Vpc } from 'aws-cdk-lib/aws-ec2';
+import { AwsSolutionsChecks } from 'cdk-nag';
 
 import { Dataplane, DataplaneConfig } from '../lib/constructs/auth-server/dataplane';
 import { OSMLAccount } from '../lib/constructs/types';
 import { KeycloakCustomConfig } from '../lib/utils/keycloak-config-loader';
+import {
+  createTestApp,
+  createTestEnvironment,
+  createTestVpc,
+  generateNagReport,
+} from './test-utils';
 
 /**
  * CloudFormation output structure from template.findOutputs()
@@ -311,7 +318,7 @@ describe('Dataplane construct', () => {
       // Should have Lambda function for config
       template.hasResourceProperties('AWS::Lambda::Function', {
         Handler: 'index.handler',
-        Runtime: 'nodejs22.x',
+        Runtime: 'nodejs24.x',
       });
     });
 
@@ -728,5 +735,60 @@ describe('Dataplane construct', () => {
         Type: 'A',
       });
     });
+  });
+});
+
+describe('cdk-nag Compliance Checks - Dataplane', () => {
+  let stack: Stack;
+
+  beforeAll(() => {
+    const app = createTestApp();
+    const env = createTestEnvironment();
+    stack = new Stack(app, 'NagDataplaneStack', { env });
+    const vpc = createTestVpc(stack);
+    const securityGroup = new SecurityGroup(stack, 'TestSG', {
+      vpc,
+      description: 'Test security group',
+    });
+
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_AUTH_CONFIG: createTestAuthConfig(),
+        BACKTRACK_WINDOW_SECONDS: 3600,
+        DATABASE_PORT: 3307,
+      }),
+    });
+
+    Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    generateNagReport(stack, errors, warnings);
+  });
+
+  test('No unsuppressed Errors', () => {
+    const errors = Annotations.fromStack(stack).findError(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  test('No unsuppressed Warnings', () => {
+    const warnings = Annotations.fromStack(stack).findWarning(
+      '*',
+      Match.stringLikeRegexp('AwsSolutions-.*'),
+    );
+    expect(warnings).toHaveLength(0);
   });
 });

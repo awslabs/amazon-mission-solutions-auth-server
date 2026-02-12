@@ -12,7 +12,14 @@ import {
   DatabaseClusterEngine,
   SubnetGroup,
 } from 'aws-cdk-lib/aws-rds';
-import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import {
+  ISecret,
+  Secret,
+  SecretRotation,
+  SecretRotationApplication,
+  SecretTargetAttachment,
+} from 'aws-cdk-lib/aws-secretsmanager';
+import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 export interface DatabaseProps {
@@ -20,6 +27,16 @@ export interface DatabaseProps {
   projectName?: string;
   databaseInstanceType?: string;
   isProd?: boolean;
+  /**
+   * Aurora MySQL backtrack window in seconds (0 or undefined = disabled).
+   * Max 72 hours (259200).
+   */
+  backtrackWindowSeconds?: number;
+  /**
+   * Port for the database cluster. Use non-default for NAG RDS11 compliance.
+   * @default 3306
+   */
+  port?: number;
 }
 
 /**
@@ -37,6 +54,8 @@ export class Database extends Construct {
     const projectName = props.projectName ?? 'keycloak';
     const databaseInstanceType = props.databaseInstanceType ?? 'r5.large';
     const isProd = props.isProd ?? false;
+    const backtrackWindowSeconds = props.backtrackWindowSeconds;
+    const dbPort = props.port ?? 3306;
 
     this.dbSecurityGroup = new SecurityGroup(this, 'DBSecurityGroup', {
       vpc: props.vpc,
@@ -96,12 +115,54 @@ export class Database extends Construct {
         retention: isProd ? Duration.days(7) : Duration.days(1),
       },
       subnetGroup,
+      port: dbPort,
+      ...(backtrackWindowSeconds != null &&
+        backtrackWindowSeconds > 0 && {
+          backtrackWindow: Duration.seconds(backtrackWindowSeconds),
+        }),
     });
 
     this.dbSecurityGroup.addIngressRule(
       this.dbSecurityGroup,
-      Port.tcp(3306),
+      Port.tcp(dbPort),
       'Allow MySQL connections from self',
     );
+
+    if (isProd) {
+      new SecretTargetAttachment(this, 'SecretAttachment', {
+        secret: databaseSecret,
+        target: this.databaseCluster,
+      });
+
+      new SecretRotation(this, 'Rotation', {
+        application: SecretRotationApplication.MYSQL_ROTATION_SINGLE_USER,
+        secret: databaseSecret,
+        target: this.databaseCluster,
+        vpc: props.vpc,
+        vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+        automaticallyAfter: Duration.days(30),
+      });
+    } else {
+      NagSuppressions.addResourceSuppressions(databaseSecret, [
+        {
+          id: 'AwsSolutions-SMG4',
+          reason:
+            'Secret rotation is only enabled for production environments. Non-prod environments are frequently torn down and do not require automatic rotation.',
+        },
+      ]);
+    }
+
+    NagSuppressions.addResourceSuppressions(this.databaseCluster, [
+      {
+        id: 'AwsSolutions-RDS6',
+        reason:
+          'Keycloak uses password-based authentication to connect to the database; IAM database authentication is not supported by the application.',
+      },
+      {
+        id: 'AwsSolutions-RDS10',
+        reason:
+          'Deletion protection is conditionally enabled based on the prodLike flag. Non-prod environments intentionally disable it for easier teardown.',
+      },
+    ]);
   }
 }
