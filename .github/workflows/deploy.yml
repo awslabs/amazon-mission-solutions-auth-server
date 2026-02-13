@@ -1,0 +1,60 @@
+name: Deploy Infrastructure
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        required: true
+        type: string
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID:
+        required: true
+      DOMAIN_HOSTED_ZONE_ID:
+        required: true
+      DOMAIN_HOSTED_ZONE_NAME:
+        required: true
+
+env:
+  AWS_REGION: ${{ inputs.aws_region }}
+  AWS_PAGER: ""
+  NODE_VERSION: '24'
+
+jobs:
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup AWS OIDC
+        uses: ./.github/actions/setup-aws-oidc
+        with:
+          aws_region: ${{ inputs.aws_region }}
+          account_id: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+          role_duration_seconds: '7200'
+      - name: Setup CDK
+        uses: ./.github/actions/setup-cdk
+        with:
+          node_version: ${{ env.NODE_VERSION }}
+      - name: Generate deployment.json
+        uses: ./.github/actions/generate-deployment-json
+        with:
+          account_id: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+          region: ${{ inputs.aws_region }}
+          hosted_zone_id: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+          hosted_zone_name: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
+      - name: Build and synthesize CDK
+        working-directory: cdk
+        run: |
+          npm run build
+          cdk synth
+      - name: Bootstrap CDK
+        working-directory: cdk
+        run: cdk bootstrap --force
+      - name: Deploy CDK infrastructure
+        working-directory: cdk
+        run: cdk deploy --all --require-approval never --concurrency 3
