@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { Duration } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy } from 'aws-cdk-lib';
 import { InstanceType, IVpc, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import {
   AuroraMysqlEngineVersion,
@@ -75,6 +75,7 @@ export class Database extends Construct {
         }),
         generateStringKey: 'password',
       },
+      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
     this.databaseSecret = databaseSecret;
@@ -108,6 +109,7 @@ export class Database extends Construct {
       defaultDatabaseName: 'keycloak',
       clusterIdentifier: `${projectName}-auth-db-cluster`,
       deletionProtection: isProd,
+      removalPolicy: isProd ? RemovalPolicy.SNAPSHOT : RemovalPolicy.DESTROY,
       credentials: Credentials.fromSecret(databaseSecret),
       storageEncrypted: true,
       copyTagsToSnapshot: true,

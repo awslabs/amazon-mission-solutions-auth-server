@@ -444,6 +444,10 @@ describe('Dataplane construct', () => {
       template.hasResourceProperties('AWS::RDS::DBCluster', {
         DeletionProtection: true,
       });
+
+      template.hasResource('AWS::RDS::DBCluster', {
+        DeletionPolicy: 'Snapshot',
+      });
     });
 
     test('does not apply deletion protection for non-prod', () => {
@@ -461,6 +465,10 @@ describe('Dataplane construct', () => {
       // Database should not have deletion protection
       template.hasResourceProperties('AWS::RDS::DBCluster', {
         DeletionProtection: false,
+      });
+
+      template.hasResource('AWS::RDS::DBCluster', {
+        DeletionPolicy: 'Delete',
       });
     });
   });
