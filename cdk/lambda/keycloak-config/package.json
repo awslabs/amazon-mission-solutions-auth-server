@@ -12,8 +12,8 @@
   "author": "Amazon Web Services",
   "license": "Apache-2.0",
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.848.0",
-    "axios": "^1.5.1"
+    "@aws-sdk/client-secrets-manager": "^3.993.0",
+    "axios": "^1.13.5"
   },
   "devDependencies": {
     "jest": "^30.0.5",
