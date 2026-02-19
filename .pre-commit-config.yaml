@@ -49,7 +49,7 @@ repos:
 
       - id: npm-install
         name: Install npm dependencies
-        entry: bash -c 'cd cdk && npm ci'
+        entry: bash -c 'cd cdk && npm ci && cd lambda/keycloak-config && npm ci'
         language: system
         files: ^cdk/.*\.(ts|tsx|js|jsx|json)$
         pass_filenames: false

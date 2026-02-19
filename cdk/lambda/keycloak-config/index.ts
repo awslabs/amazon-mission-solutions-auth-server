@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -7,19 +7,22 @@
  * Uses Custom Resource framework to integrate with CloudFormation
  */
 
-const config = require('./src/config');
-const awsUtils = require('./src/aws-utils');
-const keycloakApi = require('./src/keycloak-api');
-const healthCheck = require('./src/health-check');
-const utils = require('./src/utils');
-const configValidation = require('./src/config-validation');
+import awsUtils = require('./src/aws-utils');
+import config = require('./src/config');
+import configValidation = require('./src/config-validation');
+import healthCheck = require('./src/health-check');
+import keycloakApi = require('./src/keycloak-api');
+import {
+  CloudFormationCustomResourceEvent,
+  ProviderResponse,
+  VerificationResults,
+} from './src/types';
+import utils = require('./src/utils');
 
 /**
  * Main handler function for the Lambda
- * @param {Object} event - CloudFormation Custom Resource event
- * @returns {Promise<Object>} - Response to CloudFormation
  */
-exports.handler = async (event) => {
+exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<ProviderResponse> => {
   console.log('Event:', JSON.stringify(event));
 
   // Special handling for DELETE events during stack deletion
@@ -29,7 +32,7 @@ exports.handler = async (event) => {
     return createResponse(
       'SUCCESS',
       event.PhysicalResourceId || `KeycloakConfig-${Date.now()}`,
-      null,
+      undefined,
       {},
     );
   }
@@ -45,16 +48,17 @@ exports.handler = async (event) => {
     const adminCredentials = await awsUtils.getAdminCredentials();
 
     // Get access token for API calls
-    let accessToken;
+    let accessToken: string;
     try {
       accessToken = await keycloakApi.loginWithRetry(
         adminCredentials.username,
         adminCredentials.password,
       );
       console.log('Successfully authenticated with Keycloak admin API');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to log in after maximum retries:', error);
-      throw new Error(`Unable to log in to Keycloak after maximum retries: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Unable to log in to Keycloak after maximum retries: ${message}`);
     }
 
     // Get authentication configuration - this should always exist if the Lambda is invoked
@@ -71,7 +75,7 @@ exports.handler = async (event) => {
     console.log(`Using realm name: ${realmName}`);
 
     // Track verification results for each step
-    const verificationResults = {
+    const verificationResults: VerificationResults = {
       realmCreated: false,
       clientsCreated: false,
       usersCreated: false,
@@ -87,11 +91,12 @@ exports.handler = async (event) => {
           try {
             await keycloakApi.createOrUpdateRealmWithConfig(accessToken, realmName, authConfig);
             return true;
-          } catch (err) {
+          } catch (err: unknown) {
             // If we get a 500 error, it might be transient - let's retry
-            if (err.response && err.response.status === 500) {
+            const errObj = err as Record<string, unknown>;
+            if (errObj.response && (errObj.response as { status: number }).status === 500) {
               console.log(
-                `Got 500 error creating realm, will retry: ${err.response.data?.error || 'unknown_error'}`,
+                `Got 500 error creating realm, will retry: ${(errObj.response as { data?: { error?: string } }).data?.error || 'unknown_error'}`,
               );
               throw err; // Throw to trigger retry
             }
@@ -108,14 +113,16 @@ exports.handler = async (event) => {
       // if it returns without throwing, the realm exists
       verificationResults.realmCreated = true;
       console.log(`Verified realm "${realmName}" was created/updated successfully`);
-    } catch (error) {
+    } catch (error: unknown) {
       // Error reporting
       console.error('Error creating/verifying realm:', error);
 
       // Extract more details from the error if available
-      let errorDetails = error.message;
-      if (error.response) {
-        errorDetails += ` - Status: ${error.response.status}, Data: ${JSON.stringify(error.response.data || {})}`;
+      const errObj = error as Record<string, unknown>;
+      let errorDetails = error instanceof Error ? error.message : String(error);
+      if (errObj.response) {
+        const response = errObj.response as { status: number; data?: Record<string, unknown> };
+        errorDetails += ` - Status: ${response.status}, Data: ${JSON.stringify(response.data || {})}`;
       }
 
       throw new Error(`Failed to create/verify realm: ${errorDetails}`);
@@ -144,9 +151,10 @@ exports.handler = async (event) => {
         console.log('No clients defined in configuration');
         verificationResults.clientsCreated = true; // No clients to create is valid
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating/verifying clients:', error);
-      throw new Error(`Failed to create/verify clients: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create/verify clients: ${message}`);
     }
 
     // Step 3: Process users from configuration
@@ -176,9 +184,10 @@ exports.handler = async (event) => {
         console.log('No users defined in configuration');
         verificationResults.usersCreated = true; // No users to create is valid
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating/verifying users:', error);
-      throw new Error(`Failed to create/verify users: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create/verify users: ${message}`);
     }
 
     // Step 4: Process roles in the realm configuration (optional)
@@ -233,39 +242,42 @@ exports.handler = async (event) => {
         console.error(errorMsg);
         throw new Error(errorMsg);
       }
-    } catch (validationError) {
+    } catch (validationError: unknown) {
       console.error('Validation failed:', validationError);
-      throw new Error(`Configuration validation failed: ${validationError.message}`);
+      const message =
+        validationError instanceof Error ? validationError.message : String(validationError);
+      throw new Error(`Configuration validation failed: ${message}`);
     }
 
     console.log('All configuration steps completed and verified successfully');
     console.log('Verification Results:', JSON.stringify(verificationResults, null, 2));
 
     // Return success to CloudFormation via CDK Provider framework
-    return createResponse('SUCCESS', `KeycloakConfig-${Date.now()}`, null, {
+    return createResponse('SUCCESS', `KeycloakConfig-${Date.now()}`, undefined, {
       RealmName: realmName,
       WebsiteUri: config.WEBSITE_URI,
       VerificationResults: verificationResults,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Lambda execution failed:', error);
     // When using CDK Provider framework, we should throw errors instead of returning FAILED responses
     // The Provider framework will handle the CloudFormation communication
-    throw new Error(`Configuration failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Configuration failed: ${message}`);
   }
 };
 
 /**
  * Create response object for CDK Provider framework
  * The Provider framework handles all CloudFormation communication
- * @param {string} status - SUCCESS or FAILED
- * @param {string} physicalResourceId - Physical resource ID
- * @param {string} [reason] - Reason for failure (optional)
- * @param {Object} [data] - Response data (optional)
- * @returns {Object} - Response object for Provider framework
  */
-function createResponse(status, physicalResourceId, reason = null, data = {}) {
-  const response = {
+function createResponse(
+  status: 'SUCCESS' | 'FAILED',
+  physicalResourceId: string,
+  reason?: string,
+  data: Record<string, unknown> = {},
+): ProviderResponse {
+  const response: ProviderResponse = {
     Status: status,
     PhysicalResourceId: physicalResourceId,
   };

@@ -1,16 +1,15 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
 /** Health check functions for Keycloak */
-const axios = require('axios');
-const config = require('./config');
-const utils = require('./utils');
+import axios from 'axios';
 
-/** Basic health check for Keycloak server
- * @returns {Promise<boolean>} Server health status
- */
-async function isKeycloakHealthy() {
+import config = require('./config');
+import utils = require('./utils');
+
+/** Basic health check for Keycloak server */
+async function isKeycloakHealthy(): Promise<boolean> {
   try {
     const healthUrl = utils.getHealthCheckUrl(config.KEYCLOAK_URL);
     console.log(`Checking Keycloak health at: ${healthUrl}`);
@@ -38,10 +37,8 @@ async function isKeycloakHealthy() {
   }
 }
 
-/** Check if Keycloak API is ready for configuration
- * @returns {Promise<boolean>} API readiness status
- */
-async function isKeycloakReadyForConfig() {
+/** Check if Keycloak API is ready for configuration */
+async function isKeycloakReadyForConfig(): Promise<boolean> {
   try {
     // First, check basic health
     if (!(await isKeycloakHealthy())) {
@@ -75,10 +72,8 @@ async function isKeycloakReadyForConfig() {
   }
 }
 
-/** Wait for Keycloak to be ready, with configurable retries
- * @returns {Promise<boolean>} Ready status
- */
-async function waitForKeycloakHealth() {
+/** Wait for Keycloak to be ready, with configurable retries */
+async function waitForKeycloakHealth(): Promise<boolean> {
   const maxAttempts = config.HEALTH_CHECK_MAX_ATTEMPTS;
   const intervalMs = config.HEALTH_CHECK_INTERVAL_MS;
 
@@ -104,7 +99,7 @@ async function waitForKeycloakHealth() {
   throw new Error(`Keycloak is not ready after ${maxAttempts} health check attempts`);
 }
 
-module.exports = {
+export = {
   isKeycloakHealthy,
   isKeycloakReadyForConfig,
   waitForKeycloakHealth,

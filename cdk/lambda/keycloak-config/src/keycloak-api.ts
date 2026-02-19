@@ -1,76 +1,68 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
 /**
  * Keycloak API functions for the Keycloak Configuration Lambda
  */
-const axios = require('axios');
-const config = require('./config');
-const utils = require('./utils');
+import axios from 'axios';
+
+import config = require('./config');
+import {
+  KeycloakClientConfig,
+  KeycloakClientResponse,
+  KeycloakRealmConfig,
+  KeycloakRoleConfig,
+  KeycloakUserConfig,
+  KeycloakUserResponse,
+} from './types';
+import utils = require('./utils');
 
 /**
  * Get token URL for Keycloak
- * @param {string} baseUrl - The base URL for the Keycloak server
- * @returns {string} - The token URL
  */
-function getTokenUrl(baseUrl) {
+function getTokenUrl(baseUrl: string): string {
   const url = new URL(baseUrl);
   return `${url.protocol}//${url.host}/realms/master/protocol/openid-connect/token`;
 }
 
 /**
  * Get URL for a realm in Keycloak
- * @param {string} baseUrl - The base URL for the Keycloak server
- * @param {string} realm - The realm name
- * @returns {string} - The realm URL
  */
-function getRealmUrl(baseUrl, realm) {
+function getRealmUrl(baseUrl: string, realm: string): string {
   return `${utils.getAdminApiUrl(baseUrl)}/realms/${encodeURIComponent(realm)}`;
 }
 
 /**
  * Get URL for clients in a realm
- * @param {string} baseUrl - The base URL for the Keycloak server
- * @param {string} realm - The realm name
- * @returns {string} - The clients URL
  */
-function getClientsUrl(baseUrl, realm) {
+function getClientsUrl(baseUrl: string, realm: string): string {
   return `${getRealmUrl(baseUrl, realm)}/clients`;
 }
 
 /**
  * Get URL for users in a realm
- * @param {string} baseUrl - The base URL for the Keycloak server
- * @param {string} realm - The realm name
- * @returns {string} - The users URL
  */
-function getUsersUrl(baseUrl, realm) {
+function getUsersUrl(baseUrl: string, realm: string): string {
   return `${getRealmUrl(baseUrl, realm)}/users`;
 }
 
 /**
  * Get URL for roles in a realm
- * @param {string} baseUrl - The base URL for the Keycloak server
- * @param {string} realm - The realm name
- * @returns {string} - The roles URL
  */
-function getRolesUrl(baseUrl, realm) {
+function getRolesUrl(baseUrl: string, realm: string): string {
   return `${getRealmUrl(baseUrl, realm)}/roles`;
 }
 
 /**
  * Log in to Keycloak and get an access token
- * @param {string} username - Admin username
- * @param {string} password - Admin password
- * @returns {Promise<string>} - The access token
  */
-async function login(username, password) {
+async function login(username: string, password: string): Promise<string> {
   try {
     const tokenUrl = getTokenUrl(config.KEYCLOAK_URL);
     console.log(`Logging in to Keycloak at: ${tokenUrl}`);
 
-    const data = {
+    const data: Record<string, string> = {
       username,
       password,
       grant_type: 'password',
@@ -86,7 +78,7 @@ async function login(username, password) {
 
     if (response.data && response.data.access_token) {
       console.log(`Successfully logged in as ${username}`);
-      return response.data.access_token;
+      return response.data.access_token as string;
     } else {
       throw new Error('Received response without access token');
     }
@@ -99,11 +91,8 @@ async function login(username, password) {
 
 /**
  * Login with retry logic
- * @param {string} username - Admin username
- * @param {string} password - Admin password
- * @returns {Promise<string>} - The access token
  */
-async function loginWithRetry(username, password) {
+async function loginWithRetry(username: string, password: string): Promise<string> {
   return utils.retry(
     () => login(username, password),
     config.API_MAX_RETRIES,
@@ -114,23 +103,23 @@ async function loginWithRetry(username, password) {
 
 /**
  * Replace a placeholder value in a list of URIs
- * @param {string[]} uris - List of URI strings
- * @param {string} placeholder - Placeholder to match
- * @param {string|null} replacement - Value to substitute, or null to keep placeholder
- * @returns {string[]} - URIs with placeholders replaced
  */
-function replacePlaceholders(uris, placeholder, replacement) {
+function replacePlaceholders(
+  uris: string[],
+  placeholder: string,
+  replacement: string | null,
+): string[] {
   return uris.map(uri => (uri === placeholder && replacement ? replacement : uri));
 }
 
 /**
  * Create or update a realm
- * @param {string} token - Access token
- * @param {string} realmName - Name of the realm
- * @param {object} realmConfig - Realm configuration
- * @returns {Promise<void>} - Resolves when the realm is created or updated
  */
-async function createOrUpdateRealmWithConfig(token, realmName, realmConfig) {
+async function createOrUpdateRealmWithConfig(
+  token: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<void> {
   // Declare outside try block to avoid reference errors in catch block
   let exists = false;
 
@@ -186,15 +175,15 @@ async function createOrUpdateRealmWithConfig(token, realmName, realmConfig) {
 
 /**
  * Update an existing realm
- * @param {string} token - Access token
- * @param {string} realmName - Name of the realm
- * @param {object} realmConfig - Realm configuration
- * @returns {Promise<void>} - Resolves when the realm is updated
  */
-async function updateExistingRealm(token, realmName, realmConfig) {
+async function updateExistingRealm(
+  token: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<void> {
   try {
     // Create the config object with defaults
-    const baseConfig = {
+    const baseConfig: Record<string, unknown> = {
       realm: realmName,
       enabled: true,
     };
@@ -227,12 +216,12 @@ async function updateExistingRealm(token, realmName, realmConfig) {
 
 /**
  * Create or update a client
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {object} clientConfig - Client configuration
- * @returns {Promise<void>} - Resolves when the client is created or updated
  */
-async function createOrUpdateClient(token, realm, clientConfig) {
+async function createOrUpdateClient(
+  token: string,
+  realm: string,
+  clientConfig: KeycloakClientConfig,
+): Promise<void> {
   // Declare outside try block to avoid reference errors in catch block
   let clientExists = false;
 
@@ -244,8 +233,8 @@ async function createOrUpdateClient(token, realm, clientConfig) {
     clientExists = !!existingClient;
 
     const clientsUrl = getClientsUrl(config.KEYCLOAK_URL, realm);
-    const method = clientExists ? 'put' : 'post';
-    const url = clientExists ? `${clientsUrl}/${existingClient.id}` : clientsUrl;
+    const method = clientExists ? ('put' as const) : ('post' as const);
+    const url = clientExists ? `${clientsUrl}/${existingClient!.id}` : clientsUrl;
 
     console.log(`${clientExists ? 'Updating' : 'Creating'} client: ${clientId} in realm: ${realm}`);
 
@@ -265,9 +254,9 @@ async function createOrUpdateClient(token, realm, clientConfig) {
       );
 
       // Store as string in attributes as per Keycloak format
-      cleanClientConfig.attributes['post.logout.redirect.uris'] = processedUris.join(',');
+      cleanClientConfig.attributes!['post.logout.redirect.uris'] = processedUris.join(',');
       console.log(
-        `Processed postLogoutRedirectUris into attributes: ${cleanClientConfig.attributes['post.logout.redirect.uris']}`,
+        `Processed postLogoutRedirectUris into attributes: ${cleanClientConfig.attributes!['post.logout.redirect.uris']}`,
       );
     }
 
@@ -314,12 +303,12 @@ async function createOrUpdateClient(token, realm, clientConfig) {
 
 /**
  * Get client by client ID
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} clientId - Client ID
- * @returns {Promise<object|null>} - The client configuration or null if not found
  */
-async function getClientByClientId(token, realm, clientId) {
+async function getClientByClientId(
+  token: string,
+  realm: string,
+  clientId: string,
+): Promise<KeycloakClientResponse | null> {
   try {
     const clientsUrl = getClientsUrl(config.KEYCLOAK_URL, realm);
     console.log(`Getting client by clientId: ${clientId} in realm: ${realm}`);
@@ -328,7 +317,7 @@ async function getClientByClientId(token, realm, clientId) {
     const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     if (response.status === 200 && Array.isArray(response.data)) {
-      const clients = response.data;
+      const clients = response.data as KeycloakClientResponse[];
       if (clients.length > 0) {
         console.log(`Found client: ${clientId}`);
         return clients[0];
@@ -346,13 +335,13 @@ async function getClientByClientId(token, realm, clientId) {
 
 /**
  * Create or update a user
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {object} userConfig - User configuration
- * @param {string} password - User password
- * @returns {Promise<void>} - Resolves when the user is created or updated
  */
-async function createOrUpdateUser(token, realm, userConfig, password) {
+async function createOrUpdateUser(
+  token: string,
+  realm: string,
+  userConfig: KeycloakUserConfig,
+  password: string,
+): Promise<void> {
   // Declare outside try block to avoid reference errors in catch block
   let userExists = false;
 
@@ -364,13 +353,13 @@ async function createOrUpdateUser(token, realm, userConfig, password) {
     userExists = !!existingUser;
 
     const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
-    const method = userExists ? 'put' : 'post';
-    const url = userExists ? `${usersUrl}/${existingUser.id}` : usersUrl;
+    const method = userExists ? ('put' as const) : ('post' as const);
+    const url = userExists ? `${usersUrl}/${existingUser!.id}` : usersUrl;
 
     console.log(`${userExists ? 'Updating' : 'Creating'} user: ${username} in realm: ${realm}`);
 
     // Create user object from config
-    let userData = {
+    let userData: Record<string, unknown> = {
       username,
       enabled: userConfig.enabled !== false, // Default to true
       emailVerified: true,
@@ -393,9 +382,9 @@ async function createOrUpdateUser(token, realm, userConfig, password) {
       console.log(`Successfully ${userExists ? 'updated' : 'created'} user: ${username}`);
 
       // Get user ID (either from existing user or by looking up the newly created user)
-      let userId;
+      let userId: string;
       if (userExists) {
-        userId = existingUser.id;
+        userId = existingUser!.id;
       } else {
         const createdUser = await getUserByUsername(token, realm, username);
         if (!createdUser) throw new Error(`Failed to retrieve user after creation: ${username}`);
@@ -416,12 +405,12 @@ async function createOrUpdateUser(token, realm, userConfig, password) {
 
 /**
  * Get user by username
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} username - Username
- * @returns {Promise<object|null>} - The user or null if not found
  */
-async function getUserByUsername(token, realm, username) {
+async function getUserByUsername(
+  token: string,
+  realm: string,
+  username: string,
+): Promise<KeycloakUserResponse | null> {
   try {
     const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
     console.log(`Getting user by username: ${username} in realm: ${realm}`);
@@ -430,7 +419,7 @@ async function getUserByUsername(token, realm, username) {
     const response = await utils.makeAuthenticatedRequest('get', url, null, token);
 
     if (response.status === 200 && Array.isArray(response.data)) {
-      const users = response.data;
+      const users = response.data as KeycloakUserResponse[];
       if (users.length > 0) {
         console.log(`Found user: ${username}`);
         return users[0];
@@ -448,13 +437,13 @@ async function getUserByUsername(token, realm, username) {
 
 /**
  * Set user password
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} userId - User ID
- * @param {string} password - Password
- * @returns {Promise<void>} - Resolves when the password is set
  */
-async function setUserPassword(token, realm, userId, password) {
+async function setUserPassword(
+  token: string,
+  realm: string,
+  userId: string,
+  password: string,
+): Promise<void> {
   try {
     const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
     console.log(`Setting password for user ID: ${userId} in realm: ${realm}`);
@@ -482,12 +471,12 @@ async function setUserPassword(token, realm, userId, password) {
 
 /**
  * Create or update a role
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {object} roleConfig - Role configuration
- * @returns {Promise<void>} - Resolves when the role is created or updated
  */
-async function createOrUpdateRole(token, realm, roleConfig) {
+async function createOrUpdateRole(
+  token: string,
+  realm: string,
+  roleConfig: KeycloakRoleConfig,
+): Promise<void> {
   // Declare outside try block to avoid reference errors in catch block
   let roleExists = false;
 
@@ -498,7 +487,7 @@ async function createOrUpdateRole(token, realm, roleConfig) {
     roleExists = await verifyRoleExists(token, realm, roleName);
 
     const rolesUrl = getRolesUrl(config.KEYCLOAK_URL, realm);
-    const method = roleExists ? 'put' : 'post';
+    const method = roleExists ? ('put' as const) : ('post' as const);
     const url = roleExists ? `${rolesUrl}/${roleName}` : rolesUrl;
 
     console.log(`${roleExists ? 'Updating' : 'Creating'} role: ${roleName} in realm: ${realm}`);
@@ -519,11 +508,8 @@ async function createOrUpdateRole(token, realm, roleConfig) {
 
 /**
  * Verify if a realm exists
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @returns {Promise<boolean>} - Whether the realm exists
  */
-async function verifyRealmExists(token, realm) {
+async function verifyRealmExists(token: string, realm: string): Promise<boolean> {
   try {
     const url = getRealmUrl(config.KEYCLOAK_URL, realm);
     console.log(`Verifying realm exists: ${realm}`);
@@ -542,12 +528,12 @@ async function verifyRealmExists(token, realm) {
 
 /**
  * Verify if a client exists
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} clientId - Client ID
- * @returns {Promise<boolean>} - Whether the client exists
  */
-async function verifyClientExists(token, realm, clientId) {
+async function verifyClientExists(
+  token: string,
+  realm: string,
+  clientId: string,
+): Promise<boolean> {
   try {
     const client = await getClientByClientId(token, realm, clientId);
     return !!client;
@@ -560,12 +546,8 @@ async function verifyClientExists(token, realm, clientId) {
 
 /**
  * Verify if a user exists
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} username - Username
- * @returns {Promise<boolean>} - Whether the user exists
  */
-async function verifyUserExists(token, realm, username) {
+async function verifyUserExists(token: string, realm: string, username: string): Promise<boolean> {
   try {
     const user = await getUserByUsername(token, realm, username);
     return !!user;
@@ -578,12 +560,8 @@ async function verifyUserExists(token, realm, username) {
 
 /**
  * Verify if a role exists
- * @param {string} token - Access token
- * @param {string} realm - Name of the realm
- * @param {string} roleName - Role name
- * @returns {Promise<boolean>} - Whether the role exists
  */
-async function verifyRoleExists(token, realm, roleName) {
+async function verifyRoleExists(token: string, realm: string, roleName: string): Promise<boolean> {
   try {
     const url = `${getRolesUrl(config.KEYCLOAK_URL, realm)}/${roleName}`;
     console.log(`Verifying role exists: ${roleName}`);
@@ -600,7 +578,7 @@ async function verifyRoleExists(token, realm, roleName) {
   }
 }
 
-module.exports = {
+export = {
   login,
   loginWithRetry,
   createOrUpdateRealmWithConfig,

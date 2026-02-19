@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -10,19 +10,27 @@
  * the running Keycloak server.
  */
 
-const config = require('./config');
-const keycloakApi = require('./keycloak-api');
-const utils = require('./utils');
+import config = require('./config');
+import keycloakApi = require('./keycloak-api');
+import {
+  FullValidationResult,
+  KeycloakClientConfig,
+  KeycloakClientResponse,
+  KeycloakRealmConfig,
+  KeycloakUserConfig,
+  ValidationResult,
+} from './types';
+import utils = require('./utils');
 
 /**
  * Perform validation to ensure configuration was applied correctly
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} realmConfig - Expected realm configuration
- * @returns {Promise<object>} - Validation results
  */
-async function performValidation(accessToken, realmName, realmConfig) {
-  const results = {
+async function performValidation(
+  accessToken: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<FullValidationResult> {
+  const results: FullValidationResult = {
     allValid: true,
     failureReason: '',
     details: {
@@ -41,7 +49,7 @@ async function performValidation(accessToken, realmName, realmConfig) {
     results.details.realmValid = realmValidation.valid;
     if (!realmValidation.valid) {
       results.allValid = false;
-      results.failureReason = realmValidation.reason;
+      results.failureReason = realmValidation.reason!;
       return results;
     }
 
@@ -50,7 +58,7 @@ async function performValidation(accessToken, realmName, realmConfig) {
     results.details.clientsValid = clientsValidation.valid;
     if (!clientsValidation.valid) {
       results.allValid = false;
-      results.failureReason = clientsValidation.reason;
+      results.failureReason = clientsValidation.reason!;
       return results;
     }
 
@@ -59,7 +67,7 @@ async function performValidation(accessToken, realmName, realmConfig) {
     results.details.usersValid = usersValidation.valid;
     if (!usersValidation.valid) {
       results.allValid = false;
-      results.failureReason = usersValidation.reason;
+      results.failureReason = usersValidation.reason!;
       return results;
     }
 
@@ -70,22 +78,23 @@ async function performValidation(accessToken, realmName, realmConfig) {
 
     console.log('=== Validation Completed Successfully ===');
     return results;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Validation failed with error:', error);
     results.allValid = false;
-    results.failureReason = `Validation error: ${error.message}`;
+    const message = error instanceof Error ? error.message : String(error);
+    results.failureReason = `Validation error: ${message}`;
     return results;
   }
 }
 
 /**
  * Validate realm configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} realmConfig - Expected realm configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateRealm(accessToken, realmName, realmConfig) {
+async function validateRealm(
+  accessToken: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<ValidationResult> {
   try {
     console.log(`Validating realm "${realmName}" configuration...`);
 
@@ -99,7 +108,7 @@ async function validateRealm(accessToken, realmName, realmConfig) {
       };
     }
 
-    const actualRealm = realmResponse.data;
+    const actualRealm = realmResponse.data as { enabled: boolean };
     console.log(
       `Realm validation - Expected: enabled=${realmConfig.enabled}, Actual: enabled=${actualRealm.enabled}`,
     );
@@ -113,23 +122,24 @@ async function validateRealm(accessToken, realmName, realmConfig) {
 
     console.log(`[PASS] Realm "${realmName}" validation passed`);
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Realm validation error:`, error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
-      reason: `Realm validation error: ${error.message}`,
+      reason: `Realm validation error: ${message}`,
     };
   }
 }
 
 /**
  * Validate clients configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} realmConfig - Expected realm configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateClients(accessToken, realmName, realmConfig) {
+async function validateClients(
+  accessToken: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<ValidationResult> {
   try {
     if (!realmConfig.clients || realmConfig.clients.length === 0) {
       console.log('No clients defined in configuration - skipping client validation');
@@ -147,23 +157,24 @@ async function validateClients(accessToken, realmName, realmConfig) {
 
     console.log('[PASS] All clients validation passed');
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Clients validation error:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
-      reason: `Clients validation error: ${error.message}`,
+      reason: `Clients validation error: ${message}`,
     };
   }
 }
 
 /**
  * Validate a single client configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} expectedClient - Expected client configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateSingleClient(accessToken, realmName, expectedClient) {
+async function validateSingleClient(
+  accessToken: string,
+  realmName: string,
+  expectedClient: KeycloakClientConfig,
+): Promise<ValidationResult> {
   try {
     console.log(`  Validating client "${expectedClient.clientId}"...`);
 
@@ -181,12 +192,19 @@ async function validateSingleClient(accessToken, realmName, expectedClient) {
     }
 
     // Validate critical client properties
-    const criticalProps = ['publicClient', 'standardFlowEnabled', 'directAccessGrantsEnabled'];
+    const criticalProps = [
+      'publicClient',
+      'standardFlowEnabled',
+      'directAccessGrantsEnabled',
+    ] as const;
     for (const prop of criticalProps) {
-      if (expectedClient[prop] !== undefined && actualClient[prop] !== expectedClient[prop]) {
+      if (
+        expectedClient[prop] !== undefined &&
+        actualClient[prop as keyof KeycloakClientResponse] !== expectedClient[prop]
+      ) {
         return {
           valid: false,
-          reason: `Client "${expectedClient.clientId}" property "${prop}" mismatch - Expected: ${expectedClient[prop]}, Actual: ${actualClient[prop]}`,
+          reason: `Client "${expectedClient.clientId}" property "${prop}" mismatch - Expected: ${expectedClient[prop]}, Actual: ${actualClient[prop as keyof KeycloakClientResponse]}`,
         };
       }
     }
@@ -219,32 +237,33 @@ async function validateSingleClient(accessToken, realmName, expectedClient) {
 
     console.log(`  [PASS] Client "${expectedClient.clientId}" validation passed`);
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Client "${expectedClient.clientId}" validation error:`, error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
-      reason: `Client "${expectedClient.clientId}" validation error: ${error.message}`,
+      reason: `Client "${expectedClient.clientId}" validation error: ${message}`,
     };
   }
 }
 
 /**
  * Validate a URI list property on a client (redirect URIs or web origins)
- * @param {object} expectedClient - Expected client configuration
- * @param {object} actualClient - Actual client from Keycloak
- * @param {string} propertyName - Property key on the client object (e.g. 'redirectUris')
- * @param {string} displayName - Human-readable name for log messages (e.g. 'redirect URIs')
- * @returns {object} - Validation result
  */
-function validateClientUriList(expectedClient, actualClient, propertyName, displayName) {
-  if (!actualClient[propertyName] || actualClient[propertyName].length === 0) {
+function validateClientUriList(
+  expectedClient: KeycloakClientConfig,
+  actualClient: KeycloakClientResponse,
+  propertyName: 'redirectUris' | 'webOrigins',
+  displayName: string,
+): ValidationResult {
+  if (!actualClient[propertyName] || actualClient[propertyName]!.length === 0) {
     return {
       valid: false,
       reason: `Client "${expectedClient.clientId}" has no ${displayName}`,
     };
   }
 
-  const hasUnprocessedPlaceholder = actualClient[propertyName].some(item =>
+  const hasUnprocessedPlaceholder = actualClient[propertyName]!.some((item: string) =>
     item.includes('__PLACEHOLDER_'),
   );
 
@@ -263,12 +282,12 @@ function validateClientUriList(expectedClient, actualClient, propertyName, displ
 
 /**
  * Validate users configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} realmConfig - Expected realm configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateUsers(accessToken, realmName, realmConfig) {
+async function validateUsers(
+  accessToken: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<ValidationResult> {
   try {
     if (!realmConfig.users || realmConfig.users.length === 0) {
       console.log('No users defined in configuration - skipping user validation');
@@ -286,23 +305,24 @@ async function validateUsers(accessToken, realmName, realmConfig) {
 
     console.log('[PASS] All users validation passed');
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Users validation error:', error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
-      reason: `Users validation error: ${error.message}`,
+      reason: `Users validation error: ${message}`,
     };
   }
 }
 
 /**
  * Validate a single user configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} expectedUser - Expected user configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateSingleUser(accessToken, realmName, expectedUser) {
+async function validateSingleUser(
+  accessToken: string,
+  realmName: string,
+  expectedUser: KeycloakUserConfig,
+): Promise<ValidationResult> {
   try {
     console.log(`  Validating user "${expectedUser.username}"...`);
 
@@ -343,23 +363,24 @@ async function validateSingleUser(accessToken, realmName, expectedUser) {
 
     console.log(`  [PASS] User "${expectedUser.username}" validation passed`);
     return { valid: true };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`User "${expectedUser.username}" validation error:`, error);
+    const message = error instanceof Error ? error.message : String(error);
     return {
       valid: false,
-      reason: `User "${expectedUser.username}" validation error: ${error.message}`,
+      reason: `User "${expectedUser.username}" validation error: ${message}`,
     };
   }
 }
 
 /**
  * Validate roles configuration
- * @param {string} accessToken - Keycloak access token
- * @param {string} realmName - Realm name
- * @param {object} realmConfig - Expected realm configuration
- * @returns {Promise<object>} - Validation result
  */
-async function validateRoles(accessToken, realmName, realmConfig) {
+async function validateRoles(
+  accessToken: string,
+  realmName: string,
+  realmConfig: KeycloakRealmConfig,
+): Promise<ValidationResult> {
   try {
     if (!realmConfig.roles || !realmConfig.roles.realm || realmConfig.roles.realm.length === 0) {
       console.log('No roles defined in configuration - skipping role validation');
@@ -392,7 +413,7 @@ async function validateRoles(accessToken, realmName, realmConfig) {
   }
 }
 
-module.exports = {
+export = {
   performValidation,
   validateRealm,
   validateClients,

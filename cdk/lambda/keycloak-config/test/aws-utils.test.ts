@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -6,7 +6,7 @@ const mockSend = jest.fn();
 
 jest.mock('@aws-sdk/client-secrets-manager', () => ({
   SecretsManagerClient: jest.fn(() => ({ send: mockSend })),
-  GetSecretValueCommand: jest.fn((input) => ({ input })),
+  GetSecretValueCommand: jest.fn((input: unknown) => ({ input })),
 }));
 
 jest.mock('../src/config', () => require('./mock-helpers').createConfigMock());
@@ -17,8 +17,7 @@ const { getAdminCredentials, getOrCreateUserPassword } = require('../src/aws-uti
 describe('aws-utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    config.KEYCLOAK_ADMIN_SECRET_ARN =
-      'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin';
+    config.KEYCLOAK_ADMIN_SECRET_ARN = 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin';
     config.KEYCLOAK_ADMIN_USERNAME = 'keycloak';
   });
 
@@ -43,27 +42,21 @@ describe('aws-utils', () => {
 
     test('throws for binary secret (no SecretString)', async () => {
       mockSend.mockResolvedValue({ SecretBinary: Buffer.from('binary') });
-      await expect(getAdminCredentials()).rejects.toThrow(
-        'Failed to retrieve admin credentials',
-      );
+      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
     });
 
     test('throws when secret missing username key', async () => {
       mockSend.mockResolvedValue({
         SecretString: JSON.stringify({ password: 'secret123' }),
       });
-      await expect(getAdminCredentials()).rejects.toThrow(
-        'Failed to retrieve admin credentials',
-      );
+      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
     });
 
     test('throws when secret missing password key', async () => {
       mockSend.mockResolvedValue({
         SecretString: JSON.stringify({ username: 'keycloak' }),
       });
-      await expect(getAdminCredentials()).rejects.toThrow(
-        'Failed to retrieve admin credentials',
-      );
+      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
     });
 
     test('warns but succeeds when username does not match config', async () => {
@@ -131,7 +124,7 @@ describe('aws-utils', () => {
     });
 
     test('returns placeholder on ResourceNotFoundException', async () => {
-      const error = new Error('not found');
+      const error = new Error('not found') as Error & { name: string };
       error.name = 'ResourceNotFoundException';
       mockSend.mockRejectedValue(error);
       const result = await getOrCreateUserPassword('testuser');

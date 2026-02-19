@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -54,30 +54,22 @@ describe('health-check', () => {
 
     test('returns true when serverinfo returns 200', async () => {
       // First call: health check (200), second call: serverinfo (200)
-      axios.get
-        .mockResolvedValueOnce({ status: 200 })
-        .mockResolvedValueOnce({ status: 200 });
+      axios.get.mockResolvedValueOnce({ status: 200 }).mockResolvedValueOnce({ status: 200 });
       expect(await isKeycloakReadyForConfig()).toBe(true);
     });
 
     test('returns true when serverinfo returns 401', async () => {
-      axios.get
-        .mockResolvedValueOnce({ status: 200 })
-        .mockResolvedValueOnce({ status: 401 });
+      axios.get.mockResolvedValueOnce({ status: 200 }).mockResolvedValueOnce({ status: 401 });
       expect(await isKeycloakReadyForConfig()).toBe(true);
     });
 
     test('returns false when serverinfo returns other status', async () => {
-      axios.get
-        .mockResolvedValueOnce({ status: 200 })
-        .mockResolvedValueOnce({ status: 503 });
+      axios.get.mockResolvedValueOnce({ status: 200 }).mockResolvedValueOnce({ status: 503 });
       expect(await isKeycloakReadyForConfig()).toBe(false);
     });
 
     test('returns false on network error during serverinfo check', async () => {
-      axios.get
-        .mockResolvedValueOnce({ status: 200 })
-        .mockRejectedValueOnce(new Error('timeout'));
+      axios.get.mockResolvedValueOnce({ status: 200 }).mockRejectedValueOnce(new Error('timeout'));
       expect(await isKeycloakReadyForConfig()).toBe(false);
     });
   });
@@ -85,9 +77,7 @@ describe('health-check', () => {
   describe('waitForKeycloakHealth', () => {
     test('returns true when ready on first attempt', async () => {
       // Health check + serverinfo both succeed
-      axios.get
-        .mockResolvedValueOnce({ status: 200 })
-        .mockResolvedValueOnce({ status: 200 });
+      axios.get.mockResolvedValueOnce({ status: 200 }).mockResolvedValueOnce({ status: 200 });
       const result = await waitForKeycloakHealth();
       expect(result).toBe(true);
       expect(utils.sleep).not.toHaveBeenCalled();

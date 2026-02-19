@@ -120,13 +120,38 @@ export class KeycloakConfig extends Construct {
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [props.securityGroup],
       code: Code.fromAsset(join(__dirname, '..', '..', '..', 'lambda', 'keycloak-config'), {
+        // Exclude build artifacts and dependencies from asset fingerprinting.
+        // The bundling step handles its own dependency installation.
+        exclude: ['node_modules', 'dist', 'dist-test'],
         bundling: {
           local: {
             tryBundle(outputDir: string): boolean {
               try {
                 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+                const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
                 const lambdaPath = join(__dirname, '..', '..', '..', 'lambda', 'keycloak-config');
-                copySync(lambdaPath, outputDir);
+
+                // Install all dependencies (including devDeps for TypeScript compilation)
+                spawnSync(npmCmd, ['ci'], {
+                  cwd: lambdaPath,
+                  stdio: 'inherit',
+                });
+
+                // Compile TypeScript to dist/
+                spawnSync(npxCmd, ['tsc', '--project', 'tsconfig.json'], {
+                  cwd: lambdaPath,
+                  stdio: 'inherit',
+                });
+
+                // Copy compiled output to bundle
+                copySync(join(lambdaPath, 'dist'), outputDir);
+
+                // Copy package files and install production-only dependencies
+                copySync(join(lambdaPath, 'package.json'), join(outputDir, 'package.json'));
+                copySync(
+                  join(lambdaPath, 'package-lock.json'),
+                  join(outputDir, 'package-lock.json'),
+                );
 
                 spawnSync(npmCmd, ['install', '--omit=dev'], {
                   cwd: outputDir,
@@ -146,7 +171,11 @@ export class KeycloakConfig extends Construct {
             [
               'mkdir -p /tmp/npm-cache',
               'npm config set cache /tmp/npm-cache',
-              'cp -r /asset-input/* /asset-output/',
+              'cd /asset-input',
+              'npm ci',
+              'npx tsc --project tsconfig.json',
+              'cp -r dist/* /asset-output/',
+              'cp package.json package-lock.json /asset-output/',
               'cd /asset-output',
               'npm install --omit=dev',
             ].join(' && '),

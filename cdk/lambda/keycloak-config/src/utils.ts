@@ -1,32 +1,27 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
 /** Utility functions for Keycloak configuration */
 
-/** Pause execution for specified milliseconds
- * @param {number} ms - Milliseconds to sleep
- * @returns {Promise<void>}
- */
-function sleep(ms) {
+import axios, { AxiosResponse } from 'axios';
+import https from 'https';
+
+import { AppConfig, HttpMethod } from './types';
+
+/** Pause execution for specified milliseconds */
+function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Retry function with exponential backoff
- * @param {Function} fn - Function to retry
- * @param {number} maxRetries - Maximum retry attempts
- * @param {number} initialDelay - Starting delay (ms)
- * @param {number} maxDelay - Maximum delay (ms)
- * @param {Function} shouldRetry - Determines if retry should be attempted
- * @returns {Promise<any>}
- */
-async function retry(
-  fn,
-  maxRetries = 5,
-  initialDelay = 1000,
-  maxDelay = 60000,
-  shouldRetry = () => true,
-) {
+/** Retry function with exponential backoff */
+async function retry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 5,
+  initialDelay: number = 1000,
+  maxDelay: number = 60000,
+  shouldRetry: (error: unknown) => boolean = () => true,
+): Promise<T> {
   let retries = 0;
   let delay = initialDelay;
 
@@ -51,60 +46,53 @@ async function retry(
   }
 }
 
-/** Format error with response details
- * @param {Error} error - Error object
- * @returns {string} - Formatted message
- */
-function formatError(error) {
+/** Format error with response details */
+function formatError(error: unknown): string {
   if (!error) {
     return 'Unknown error';
   }
 
-  if (error.response) {
+  const err = error as Record<string, unknown>;
+
+  if (err.response) {
     // The request was made and the server responded with a status code
     // that falls out of the range of 2xx
-    const data = error.response.data || {};
-    const message = data.errorMessage || data.error || JSON.stringify(data);
-    return `Status ${error.response.status}: ${message}`;
-  } else if (error.request) {
+    const response = err.response as { status: number; data?: Record<string, unknown> | null };
+    const data = response.data || {};
+    const message =
+      (data as Record<string, unknown>).errorMessage ||
+      (data as Record<string, unknown>).error ||
+      JSON.stringify(data);
+    return `Status ${response.status}: ${message}`;
+  } else if (err.request) {
     // The request was made but no response was received
-    return `No response received: ${error.message}`;
+    return `No response received: ${(err as { message: string }).message}`;
   } else {
     // Something happened in setting up the request that triggered an Error
-    return `Request error: ${error.message}`;
+    return `Request error: ${(err as { message: string }).message}`;
   }
 }
 
-/** Get Keycloak health check URL
- * @param {string} baseUrl - Keycloak server URL
- * @returns {string} - Health check endpoint
- */
-function getHealthCheckUrl(baseUrl) {
+/** Get Keycloak health check URL */
+function getHealthCheckUrl(baseUrl: string): string {
   const url = new URL(baseUrl);
   return `${url.protocol}//${url.host}/`;
 }
 
-/** Get Keycloak admin API URL
- * @param {string} baseUrl - Keycloak server URL
- * @returns {string} - Admin API endpoint
- */
-function getAdminApiUrl(baseUrl) {
+/** Get Keycloak admin API URL */
+function getAdminApiUrl(baseUrl: string): string {
   const url = new URL(baseUrl);
   return `${url.protocol}//${url.host}/admin`;
 }
 
-/** Create configured HTTPS agent for SSL
- * @returns {object|null} - HTTPS agent or null for HTTP
- */
-function createHttpsAgent() {
-  const config = require('./config');
+/** Create configured HTTPS agent for SSL */
+function createHttpsAgent(): https.Agent | null {
+  const config = require('./config') as AppConfig;
 
   // Only create HTTPS agent for HTTPS URLs
   if (!config.KEYCLOAK_URL.startsWith('https://')) {
     return null;
   }
-
-  const https = require('https');
 
   // In a production environment, we want proper SSL validation
   // The hostname should match the certificate
@@ -117,18 +105,16 @@ function createHttpsAgent() {
   });
 }
 
-/** Make authenticated HTTP request
- * @param {string} method - HTTP method (get, post, put, delete)
- * @param {string} url - Request URL
- * @param {object} data - Request body data
- * @param {string} accessToken - Authorization token
- * @returns {Promise<object>} - Response
- */
-async function makeAuthenticatedRequest(method, url, data, accessToken) {
-  const axios = require('axios');
-  const config = require('./config');
+/** Make authenticated HTTP request */
+async function makeAuthenticatedRequest(
+  method: HttpMethod,
+  url: string,
+  data: unknown,
+  accessToken: string,
+): Promise<AxiosResponse> {
+  const config = require('./config') as AppConfig;
 
-  const requestConfig = {
+  const requestConfig: Record<string, unknown> = {
     method,
     url,
     headers: {
@@ -136,7 +122,7 @@ async function makeAuthenticatedRequest(method, url, data, accessToken) {
       'Content-Type': 'application/json',
     },
     timeout: config.API_TIMEOUT_MS,
-    validateStatus: status => status < 500, // Don't throw for 4xx errors
+    validateStatus: (status: number) => status < 500, // Don't throw for 4xx errors
     httpsAgent: createHttpsAgent(),
   };
 
@@ -145,7 +131,9 @@ async function makeAuthenticatedRequest(method, url, data, accessToken) {
   }
 
   try {
-    const response = await axios(requestConfig);
+    const response: AxiosResponse = await axios(
+      requestConfig as unknown as Parameters<typeof axios>[0],
+    );
     return response;
   } catch (error) {
     console.error(`HTTP request failed: ${method.toUpperCase()} ${url}`, formatError(error));
@@ -153,7 +141,7 @@ async function makeAuthenticatedRequest(method, url, data, accessToken) {
   }
 }
 
-module.exports = {
+export = {
   sleep,
   retry,
   formatError,
