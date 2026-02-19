@@ -2,7 +2,7 @@
 
 This Lambda function provides automated post-deployment configuration for Keycloak authentication servers. It eliminates the need for manual setup through the admin console by programmatically configuring realms, clients, users, and roles.
 
-> **Note**: This Lambda is only deployed if `KEYCLOAK_AUTH_CONFIG` is present in `deployment.json` at the time of initial deployment. Without this configuration, the CDK stack creates a fresh Keycloak installation with only the master realm.
+> **Note**: This Lambda is only deployed if `KEYCLOAK_AUTH_CONFIG` is present in `deployment.json` at the time of deployment. Without this configuration, the CDK stack creates a fresh Keycloak installation with only the master realm.
 
 ## Functionality
 
@@ -13,33 +13,49 @@ The Lambda performs the following operations in sequence:
 3. **Realm Management**: Creates or updates custom realms with specified settings
 4. **Client Configuration**: Sets up OAuth/OIDC clients with proper redirect URIs and permissions
 5. **User Management**: Creates users with secure passwords stored in AWS Secrets Manager
-6. **Validation**: Verifies all configurations were applied successfully
+6. **Role Management**: Creates or updates realm roles defined in configuration
+7. **Validation**: Verifies all configurations were applied successfully
 
 ## Lambda Architecture
 
-The function code is organized into focused modules:
+The function is organized into focused modules:
 
-- **`index.js`** - Main Lambda handler and workflow orchestration
-- **`config.js`** - Environment variable validation and configuration parsing
-- **`config-validation.js`** - Configuration validation after deployment
-- **`aws-utils.js`** - AWS SDK utilities (Secrets Manager)
-- **`health-check.js`** - Keycloak server health monitoring and readiness checks
-- **`keycloak-api.js`** - Keycloak Admin REST API client implementation
-- **`utils.js`** - Retry logic, error handling, and validation utilities
+- **`index.ts`** — Main Lambda handler and workflow orchestration
+- **`src/types.ts`** — Runtime type definitions (events, responses, Keycloak config interfaces)
+- **`src/config.ts`** — Environment variable validation and configuration parsing
+- **`src/config-validation.ts`** — Configuration validation after deployment
+- **`src/aws-utils.ts`** — AWS SDK utilities (Secrets Manager)
+- **`src/health-check.ts`** — Keycloak server health monitoring and readiness checks
+- **`src/keycloak-api.ts`** — Keycloak Admin REST API client implementation
+- **`src/utils.ts`** — Retry logic, error handling, and validation utilities
+
+## Build Process
+
+The Lambda source is TypeScript, compiled to JavaScript before deployment:
+
+- **Source**: `index.ts` + `src/*.ts`
+- **Compiler config**: `tsconfig.json`
+- **Output**: `dist/` directory (compiled JS)
+- **Runtime**: Node.js 24 (`NODEJS_24_X`)
+- **Bundling**: CDK runs `npm ci`, `npx tsc`, then copies `dist/` with production-only `node_modules` into the Lambda deployment package
 
 ## Environment Variables
 
 The Lambda is configured through the following environment variables:
 
-| Variable                    | Description                                                  | Required |
-| --------------------------- | ------------------------------------------------------------ | -------- |
-| `KEYCLOAK_URL`              | Base URL of the Keycloak server                              | Yes      |
-| `KEYCLOAK_ADMIN_SECRET_ARN` | ARN of Secrets Manager secret containing admin credentials   | Yes      |
-| `KEYCLOAK_ADMIN_USERNAME`   | Master realm admin username (must match secret)              | Yes      |
-| `WEBSITE_URI`               | Base URI for client redirect/origin configuration            | Yes      |
-| `REALM_CONFIG`              | JSON string containing realm, client, and user configuration | No       |
-| `USER_PASSWORD_SECRETS`     | JSON mapping of usernames to password secret ARNs            | No       |
-| `LOAD_BALANCER_DNS`         | Alternative DNS name if different from KEYCLOAK_URL          | No       |
+| Variable                    | Description                                                  | Required | Default    |
+| --------------------------- | ------------------------------------------------------------ | -------- | ---------- |
+| `KEYCLOAK_URL`              | Base URL of the Keycloak server                              | Yes      | —          |
+| `KEYCLOAK_ADMIN_SECRET_ARN` | ARN of Secrets Manager secret containing admin credentials   | Yes      | —          |
+| `KEYCLOAK_ADMIN_USERNAME`   | Master realm admin username (must match secret)              | No       | `keycloak` |
+| `WEBSITE_URI`               | Base URI for client redirect/origin configuration            | No       | `*`        |
+| `AUTH_CONFIG`               | JSON string containing realm, client, and user configuration | No       | `{}`       |
+| `USER_PASSWORD_SECRETS`     | JSON mapping of usernames to password secret ARNs            | No       | `{}`       |
+| `API_TIMEOUT_MS`            | Timeout in milliseconds for Keycloak API requests            | No       | `30000`    |
+| `HEALTH_CHECK_MAX_ATTEMPTS` | Maximum number of health check retry attempts                | No       | `30`       |
+| `HEALTH_CHECK_INTERVAL_MS`  | Interval in milliseconds between health check attempts       | No       | `20000`    |
+| `API_MAX_RETRIES`           | Maximum number of retries for API calls (e.g., login)        | No       | `10`       |
+| `API_RETRY_INTERVAL_MS`     | Interval in milliseconds between API call retries            | No       | `20000`    |
 
 ## Health Check Strategy
 
@@ -60,6 +76,7 @@ The Lambda interacts with Keycloak's Admin REST API for:
 - **Realm Management**: CRUD operations on realms and their settings
 - **Client Management**: OAuth/OIDC client configuration and permissions
 - **User Management**: User creation, password setting, and profile updates
+- **Role Management**: Creation and updates of realm-level roles
 - **Validation**: Configuration verification and health checks
 
 ### AWS Services Integration
@@ -110,13 +127,6 @@ aws lambda invoke \
   --payload '{"RequestType": "Update"}' \
   response.json
 ```
-
-## Dependencies
-
-| Package                           | Version | Purpose                               |
-| --------------------------------- | ------- | ------------------------------------- |
-| `@aws-sdk/client-secrets-manager` | ^3.x    | AWS Secrets Manager integration       |
-| `axios`                           | ^1.x    | HTTP client for Keycloak API requests |
 
 ## Development and Testing
 
