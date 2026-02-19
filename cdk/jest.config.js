@@ -4,9 +4,9 @@ module.exports = {
   testMatch: [
     // TypeScript tests for CDK
     '<rootDir>/test/**/*.test.ts',
-    // JavaScript tests for Lambda functions
-    '<rootDir>/lambda/**/?(*.)(spec|test).js',
-    '<rootDir>/lambda/**/__tests__/**/*.js',
+    // TypeScript tests for Lambda functions
+    '<rootDir>/lambda/**/?(*.)(spec|test).ts',
+    '<rootDir>/lambda/**/__tests__/**/*.ts',
   ],
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
@@ -18,32 +18,9 @@ module.exports = {
   // Exclude cdk.out and integration tests from default test discovery
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/', '<rootDir>/test/integration/'],
   collectCoverage: true,
-  collectCoverageFrom: [
-    'lambda/keycloak-config/src/**/*.js',
-    'lambda/keycloak-config/index.js',
-    '!lambda/keycloak-config/test/**',
-    '!lambda/**/node_modules/**',
-    '!**/node_modules/**',
-    '!test/integration/**',
-  ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
   coveragePathIgnorePatterns: ['/node_modules/', '<rootDir>/cdk.out/'],
-  coverageThreshold: {
-    global: {
-      statements: 70,
-      branches: 60,
-      functions: 70,
-      lines: 70,
-    },
-    // Add specific thresholds for lambda code
-    'lambda/keycloak-config/src/**/*.js': {
-      branches: 70,
-      functions: 80,
-      lines: 80,
-      statements: 80,
-    },
-  },
   // Setup projects for multi-project testing
   projects: [
     {
@@ -59,17 +36,35 @@ module.exports = {
     {
       displayName: 'keycloak-lambda',
       testMatch: [
-        '<rootDir>/lambda/keycloak-config/test/**/*.test.js',
-        '<rootDir>/lambda/keycloak-config/test/**/*.spec.js',
+        '<rootDir>/lambda/keycloak-config/test/**/*.test.ts',
+        '<rootDir>/lambda/keycloak-config/test/**/*.spec.ts',
       ],
+      transform: {
+        '^.+\\.tsx?$': ['ts-jest', { tsconfig: '<rootDir>/lambda/keycloak-config/tsconfig.test.json' }],
+      },
       // Use the Lambda's setup file
-      setupFilesAfterEnv: ['<rootDir>/lambda/keycloak-config/test/setup.js'],
-      // Exclude setup.js from being treated as a test
+      setupFilesAfterEnv: ['<rootDir>/lambda/keycloak-config/test/setup.ts'],
+      // Exclude setup.ts from being treated as a test
       testPathIgnorePatterns: [
-        '<rootDir>/lambda/keycloak-config/test/setup.js',
+        '<rootDir>/lambda/keycloak-config/test/setup.ts',
         '<rootDir>/cdk.out/',
       ],
       modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+      collectCoverageFrom: [
+        '<rootDir>/lambda/keycloak-config/src/**/*.ts',
+        '<rootDir>/lambda/keycloak-config/index.ts',
+        '!<rootDir>/lambda/keycloak-config/src/types.ts',
+        '!<rootDir>/lambda/keycloak-config/test/**',
+        '!<rootDir>/lambda/**/node_modules/**',
+      ],
+      coverageThreshold: {
+        global: {
+          statements: 80,
+          branches: 70,
+          functions: 80,
+          lines: 80,
+        },
+      },
     },
     {
       displayName: 'integration',

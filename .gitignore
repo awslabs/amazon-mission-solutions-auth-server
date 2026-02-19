@@ -18,7 +18,6 @@ cdk/cdk-nag-suppressions-report.txt
 **/*.js
 !**/jest.config.js
 !**/eslint.config.mjs
-!**/lambda/**/*.js
 **/*.d.ts
 
 # IDE files

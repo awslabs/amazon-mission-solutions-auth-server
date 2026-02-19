@@ -1,15 +1,14 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
 /**
  * AWS utility functions for the Keycloak Configuration Lambda
  */
-const {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} = require('@aws-sdk/client-secrets-manager');
-const config = require('./config');
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+
+import config = require('./config');
+import { AdminCredentials } from './types';
 
 // Create AWS SDK clients
 const secretsManager = new SecretsManagerClient();
@@ -17,7 +16,7 @@ const secretsManager = new SecretsManagerClient();
 /**
  * Retrieve the admin credentials from AWS Secrets Manager
  */
-async function getAdminCredentials() {
+async function getAdminCredentials(): Promise<AdminCredentials> {
   const secretArn = config.KEYCLOAK_ADMIN_SECRET_ARN;
 
   if (!secretArn) {
@@ -26,16 +25,14 @@ async function getAdminCredentials() {
 
   try {
     console.log(`Retrieving admin credentials from secret: ${secretArn}`);
-    const response = await secretsManager.send(
-      new GetSecretValueCommand({ SecretId: secretArn }),
-    );
+    const response = await secretsManager.send(new GetSecretValueCommand({ SecretId: secretArn }));
 
     if (!('SecretString' in response)) {
       throw new Error('Secret is binary and not supported');
     }
 
-    const secretString = response.SecretString;
-    const secretObject = JSON.parse(secretString);
+    const secretString = response.SecretString!;
+    const secretObject = JSON.parse(secretString) as Record<string, string>;
 
     if (!secretObject.username || !secretObject.password) {
       throw new Error('Admin secret must contain username and password keys');
@@ -52,18 +49,17 @@ async function getAdminCredentials() {
       username: secretObject.username,
       password: secretObject.password,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error retrieving admin credentials:', error);
-    throw new Error(`Failed to retrieve admin credentials: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to retrieve admin credentials: ${message}`);
   }
 }
 
 /**
  * Get or create a user password from AWS Secrets Manager
- * @param {string} username - The username of the user
- * @returns {Promise<string>} - The password for the user
  */
-async function getOrCreateUserPassword(username) {
+async function getOrCreateUserPassword(username: string): Promise<string> {
   // Get the ARNs of user password secrets
   const userPasswordSecrets = config.getUserPasswordSecrets();
 
@@ -74,46 +70,48 @@ async function getOrCreateUserPassword(username) {
 
   try {
     console.log(`Retrieving password for user ${username} from secret: ${secretArn}`);
-    const response = await secretsManager.send(
-      new GetSecretValueCommand({ SecretId: secretArn }),
-    );
+    const response = await secretsManager.send(new GetSecretValueCommand({ SecretId: secretArn }));
 
-    let password;
+    let password: string;
     if ('SecretString' in response) {
       // For simple string secrets
-      if (response.SecretString.startsWith('{')) {
+      if (response.SecretString!.startsWith('{')) {
         try {
-          const parsed = JSON.parse(response.SecretString);
+          const parsed = JSON.parse(response.SecretString!) as Record<string, string>;
           if (parsed.password) {
             password = parsed.password;
           } else {
-            password = response.SecretString;
+            password = response.SecretString!;
           }
         } catch {
           // If not valid JSON, use the raw string as password
-          password = response.SecretString;
+          password = response.SecretString!;
         }
       } else {
-        password = response.SecretString;
+        password = response.SecretString!;
       }
     } else {
       throw new Error('Binary secrets are not supported');
     }
 
     return password;
-  } catch (error) {
-    if (error.name === 'ResourceNotFoundException') {
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      (error as Error & { name: string }).name === 'ResourceNotFoundException'
+    ) {
       console.log(`Secret not found for user ${username}, will be created by CDK`);
       // Return a placeholder for now - actual password will be created by CDK
       return 'placeholder-password-will-be-created-by-cdk';
     }
 
     console.error(`Error retrieving password for user ${username}:`, error);
-    throw new Error(`Failed to retrieve password for user ${username}: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to retrieve password for user ${username}: ${message}`);
   }
 }
 
-module.exports = {
+export = {
   getAdminCredentials,
   getOrCreateUserPassword,
 };

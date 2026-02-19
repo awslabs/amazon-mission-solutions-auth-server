@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -10,13 +10,20 @@
  * are consistent and easy to override.
  */
 
-function createConfigMock(overrides = {}) {
+import { AppConfig } from '../src/types';
+
+export interface ConfigMock extends AppConfig {
+  [key: string]: unknown;
+}
+
+export function createConfigMock(overrides: Partial<ConfigMock> = {}): ConfigMock {
   return {
     KEYCLOAK_URL: 'https://keycloak.example.com',
     KEYCLOAK_ADMIN_USERNAME: 'keycloak',
-    KEYCLOAK_ADMIN_SECRET_ARN:
-      'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
+    KEYCLOAK_ADMIN_SECRET_ARN: 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
     WEBSITE_URI: 'https://myapp.example.com',
+    AUTH_CONFIG: '{}',
+    USER_PASSWORD_SECRETS: '{}',
     API_TIMEOUT_MS: 5000,
     HEALTH_CHECK_MAX_ATTEMPTS: 3,
     HEALTH_CHECK_INTERVAL_MS: 100,
@@ -28,26 +35,26 @@ function createConfigMock(overrides = {}) {
   };
 }
 
-function createUtilsMock(overrides = {}) {
+export function createUtilsMock(overrides: Record<string, unknown> = {}) {
   return {
-    sleep: jest.fn().mockResolvedValue(),
-    retry: jest.fn((fn) => fn()),
-    getHealthCheckUrl: jest.fn((url) => {
+    sleep: jest.fn().mockResolvedValue(undefined),
+    retry: jest.fn((fn: () => unknown) => fn()),
+    getHealthCheckUrl: jest.fn((url: string) => {
       const u = new URL(url);
       return `${u.protocol}//${u.host}/`;
     }),
-    getAdminApiUrl: jest.fn((url) => {
+    getAdminApiUrl: jest.fn((url: string) => {
       const u = new URL(url);
       return `${u.protocol}//${u.host}/admin`;
     }),
     createHttpsAgent: jest.fn().mockReturnValue(null),
-    formatError: jest.fn((err) => err?.message || 'mock error'),
+    formatError: jest.fn((err: unknown) => (err as Error)?.message || 'mock error'),
     makeAuthenticatedRequest: jest.fn(),
     ...overrides,
   };
 }
 
-function createKeycloakApiMock(overrides = {}) {
+export function createKeycloakApiMock(overrides: Record<string, unknown> = {}) {
   return {
     login: jest.fn(),
     loginWithRetry: jest.fn(),
@@ -66,7 +73,7 @@ function createKeycloakApiMock(overrides = {}) {
   };
 }
 
-function createAwsUtilsMock(overrides = {}) {
+export function createAwsUtilsMock(overrides: Record<string, unknown> = {}) {
   return {
     getAdminCredentials: jest.fn(),
     getOrCreateUserPassword: jest.fn(),
@@ -74,25 +81,16 @@ function createAwsUtilsMock(overrides = {}) {
   };
 }
 
-function createHealthCheckMock(overrides = {}) {
+export function createHealthCheckMock(overrides: Record<string, unknown> = {}) {
   return {
     waitForKeycloakHealth: jest.fn(),
     ...overrides,
   };
 }
 
-function createConfigValidationMock(overrides = {}) {
+export function createConfigValidationMock(overrides: Record<string, unknown> = {}) {
   return {
     performValidation: jest.fn(),
     ...overrides,
   };
 }
-
-module.exports = {
-  createConfigMock,
-  createUtilsMock,
-  createKeycloakApiMock,
-  createAwsUtilsMock,
-  createHealthCheckMock,
-  createConfigValidationMock,
-};

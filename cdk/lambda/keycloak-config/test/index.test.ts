@@ -1,17 +1,15 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-// index.js uses './src/...' paths (relative to itself), but Jest resolves
+// index.ts uses './src/...' paths (relative to itself), but Jest resolves
 // from the test file's perspective, so we use '../src/...' here.
 jest.mock('../src/config', () => require('./mock-helpers').createConfigMock());
 jest.mock('../src/aws-utils', () => require('./mock-helpers').createAwsUtilsMock());
 jest.mock('../src/keycloak-api', () => require('./mock-helpers').createKeycloakApiMock());
 jest.mock('../src/health-check', () => require('./mock-helpers').createHealthCheckMock());
 jest.mock('../src/utils', () => require('./mock-helpers').createUtilsMock());
-jest.mock('../src/config-validation', () =>
-  require('./mock-helpers').createConfigValidationMock(),
-);
+jest.mock('../src/config-validation', () => require('./mock-helpers').createConfigValidationMock());
 
 const config = require('../src/config');
 const awsUtils = require('../src/aws-utils');
@@ -27,7 +25,7 @@ const { handler } = require('../index');
  * Individual tests override specific mocks to trigger error paths.
  */
 function setupHappyPath() {
-  const authConfig = {
+  const authConfig: Record<string, unknown> = {
     realm: 'test-realm',
     enabled: true,
     clients: [{ clientId: 'my-client' }],
@@ -44,20 +42,20 @@ function setupHappyPath() {
   config.getAuthConfig.mockReturnValue(authConfig);
 
   // realm
-  keycloakApi.createOrUpdateRealmWithConfig.mockResolvedValue();
+  keycloakApi.createOrUpdateRealmWithConfig.mockResolvedValue(undefined);
   keycloakApi.verifyRealmExists.mockResolvedValue(true);
 
   // clients
-  keycloakApi.createOrUpdateClient.mockResolvedValue();
+  keycloakApi.createOrUpdateClient.mockResolvedValue(undefined);
   keycloakApi.verifyClientExists.mockResolvedValue(true);
 
   // users
   awsUtils.getOrCreateUserPassword.mockResolvedValue('user-pw');
-  keycloakApi.createOrUpdateUser.mockResolvedValue();
+  keycloakApi.createOrUpdateUser.mockResolvedValue(undefined);
   keycloakApi.verifyUserExists.mockResolvedValue(true);
 
   // roles
-  keycloakApi.createOrUpdateRole.mockResolvedValue();
+  keycloakApi.createOrUpdateRole.mockResolvedValue(undefined);
   keycloakApi.verifyRoleExists.mockResolvedValue(true);
 
   // validation
@@ -67,7 +65,7 @@ function setupHappyPath() {
   });
 
   // Re-set after clearAllMocks, which does not reset mockImplementation
-  utils.retry.mockImplementation((fn) => fn());
+  utils.retry.mockImplementation((fn: () => unknown) => fn());
 
   return authConfig;
 }
@@ -135,9 +133,9 @@ describe('index handler', () => {
 
     test('creates realm, clients, users, roles in order', async () => {
       setupHappyPath();
-      const callOrder = [];
+      const callOrder: string[] = [];
 
-      utils.retry.mockImplementation(async (fn) => {
+      utils.retry.mockImplementation(async (fn: () => unknown) => {
         callOrder.push('realm');
         return fn();
       });
@@ -185,9 +183,7 @@ describe('index handler', () => {
       setupHappyPath();
       config.getAuthConfig.mockReturnValue(null);
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Configuration failed',
-      );
+      await expect(handler({ RequestType: 'Create' })).rejects.toThrow('Configuration failed');
     });
 
     test('throws with descriptive message when loginWithRetry fails', async () => {
@@ -209,7 +205,9 @@ describe('index handler', () => {
 
     test('includes response status/data in error for realm failures with error.response', async () => {
       setupHappyPath();
-      const err = new Error('realm error');
+      const err = new Error('realm error') as Error & {
+        response: { status: number; data: { error: string } };
+      };
       err.response = { status: 500, data: { error: 'internal' } };
       utils.retry.mockRejectedValue(err);
 

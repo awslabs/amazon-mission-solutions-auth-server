@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -26,12 +26,12 @@ describe('config-validation', () => {
   });
 
   describe('performValidation', () => {
-    function makeRealmConfig(overrides = {}) {
+    function makeRealmConfig(overrides: Record<string, unknown> = {}) {
       return {
         enabled: true,
-        clients: [],
-        users: [],
-        roles: { realm: [] },
+        clients: [] as unknown[],
+        users: [] as unknown[],
+        roles: { realm: [] as unknown[] },
         ...overrides,
       };
     }

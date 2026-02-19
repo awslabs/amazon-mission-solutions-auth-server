@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
@@ -44,10 +44,7 @@ describe('utils', () => {
     });
 
     test('retries and succeeds on later attempt', async () => {
-      const fn = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('fail1'))
-        .mockResolvedValue('success');
+      const fn = jest.fn().mockRejectedValueOnce(new Error('fail1')).mockResolvedValue('success');
       const result = await retry(fn, 3, 10, 100);
       expect(result).toBe('success');
       expect(fn).toHaveBeenCalledTimes(2);
@@ -63,9 +60,7 @@ describe('utils', () => {
     test('stops retrying when shouldRetry returns false', async () => {
       const fn = jest.fn().mockRejectedValue(new Error('no retry'));
       const shouldRetry = jest.fn().mockReturnValue(false);
-      await expect(retry(fn, 5, 10, 100, shouldRetry)).rejects.toThrow(
-        'no retry',
-      );
+      await expect(retry(fn, 5, 10, 100, shouldRetry)).rejects.toThrow('no retry');
       // First attempt fails, shouldRetry returns false, so only 1 call
       expect(fn).toHaveBeenCalledTimes(1);
     });
@@ -128,9 +123,7 @@ describe('utils', () => {
     });
 
     test('constructs URL from HTTP base URL', () => {
-      expect(getHealthCheckUrl('http://localhost:8080')).toBe(
-        'http://localhost:8080/',
-      );
+      expect(getHealthCheckUrl('http://localhost:8080')).toBe('http://localhost:8080/');
     });
 
     test('strips path from base URL', () => {
@@ -195,18 +188,14 @@ describe('utils', () => {
       axios.mockResolvedValue({ status: 201, data: {} });
       const data = { key: 'value' };
       await makeAuthenticatedRequest('post', 'https://example.com/api', data, 'token');
-      expect(axios).toHaveBeenCalledWith(
-        expect.objectContaining({ data }),
-      );
+      expect(axios).toHaveBeenCalledWith(expect.objectContaining({ data }));
     });
 
     test('includes data for PUT requests', async () => {
       axios.mockResolvedValue({ status: 200, data: {} });
       const data = { key: 'value' };
       await makeAuthenticatedRequest('put', 'https://example.com/api', data, 'token');
-      expect(axios).toHaveBeenCalledWith(
-        expect.objectContaining({ data }),
-      );
+      expect(axios).toHaveBeenCalledWith(expect.objectContaining({ data }));
     });
 
     test('omits data for GET requests', async () => {

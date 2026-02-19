@@ -1,12 +1,11 @@
-/**
+/*
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
 describe('config', () => {
-  const REQUIRED_ENVS = {
+  const REQUIRED_ENVS: Record<string, string> = {
     KEYCLOAK_URL: 'https://keycloak.example.com',
-    KEYCLOAK_ADMIN_SECRET_ARN:
-      'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
+    KEYCLOAK_ADMIN_SECRET_ARN: 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
   };
 
   beforeEach(() => {
@@ -25,7 +24,7 @@ describe('config', () => {
     delete process.env.API_RETRY_INTERVAL_MS;
   });
 
-  function loadConfig(envOverrides = {}) {
+  function loadConfig(envOverrides: Record<string, string> = {}) {
     Object.assign(process.env, REQUIRED_ENVS, envOverrides);
     return require('../src/config');
   }
@@ -124,16 +123,14 @@ describe('config', () => {
     });
 
     test('parses valid JSON config', () => {
-      const authData = { realm: 'test', clients: [] };
+      const authData = { realm: 'test', clients: [] as unknown[] };
       const config = loadConfig({ AUTH_CONFIG: JSON.stringify(authData) });
       expect(config.getAuthConfig()).toEqual(authData);
     });
 
     test('throws on invalid JSON with descriptive message', () => {
       const config = loadConfig({ AUTH_CONFIG: 'not-json' });
-      expect(() => config.getAuthConfig()).toThrow(
-        'Invalid authentication configuration',
-      );
+      expect(() => config.getAuthConfig()).toThrow('Invalid authentication configuration');
     });
   });
 
@@ -158,9 +155,7 @@ describe('config', () => {
 
     test('throws on invalid JSON with descriptive message', () => {
       const config = loadConfig({ USER_PASSWORD_SECRETS: '{bad-json' });
-      expect(() => config.getUserPasswordSecrets()).toThrow(
-        'Invalid user password secrets',
-      );
+      expect(() => config.getUserPasswordSecrets()).toThrow('Invalid user password secrets');
     });
   });
 });
