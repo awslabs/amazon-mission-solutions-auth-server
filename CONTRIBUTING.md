@@ -1,6 +1,6 @@
-# Contributing to OSML Auth Server
+# Contributing to AMS Auth Server
 
-We welcome contributions to the OSML Auth Server project! This document provides guidelines and instructions for contributing.
+We welcome contributions to the AMS Auth Server project! This document provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
@@ -10,8 +10,8 @@ This project adheres to the [Code of Conduct](CODE_OF_CONDUCT.md). By participat
 
 ### Reporting Issues
 
-- Ensure the bug was not already reported by searching on GitHub under [Issues](https://github.com/your-organization/osml-auth-server/issues)
-- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/your-organization/osml-auth-server/issues/new)
+- Ensure the bug was not already reported by searching on GitHub under [Issues](https://github.com/awslabs/amazon-mission-solutions-auth-server/issues)
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/awslabs/amazon-mission-solutions-auth-server/issues/new)
 - Include a title and clear description, as much relevant information as possible, and a code sample or executable test case demonstrating the expected behavior that is not occurring
 
 ### Submitting Changes
@@ -35,7 +35,7 @@ This project adheres to the [Code of Conduct](CODE_OF_CONDUCT.md). By participat
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
+- Node.js (v24 or higher)
 - AWS CDK v2
 - AWS CLI configured with appropriate permissions
 
@@ -61,7 +61,7 @@ npm test
 Run linting checks with:
 ```
 cd cdk
-npx eslint --max-warnings 10 --fix "**/*.{js,ts}"
+npx eslint --max-warnings 0 --fix "**/*.{js,ts}"
 ```
 
 Format code with:

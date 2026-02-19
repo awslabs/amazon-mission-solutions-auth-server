@@ -36,10 +36,20 @@ export interface KeycloakClient {
   webOrigins?: string[];
 }
 
+export interface KeycloakRole {
+  name: string;
+  description?: string;
+}
+
+export interface KeycloakRolesConfig {
+  realm?: KeycloakRole[];
+}
+
 export interface KeycloakCustomConfig {
   realm: string;
   enabled: boolean;
   displayName?: string;
   clients: KeycloakClient[];
   users: KeycloakUser[];
+  roles?: KeycloakRolesConfig;
 }

@@ -22,9 +22,9 @@ Ensure you have the following tools and versions installed:
 
 - **AWS Account** with appropriate permissions
 - **AWS CLI** configured with credentials
-- **Node.js** 24+ (LTS recommended)
-- **AWS CDK** 2.207.0+ (`npm install -g aws-cdk@^2.207.0`)
-- **Docker** (optional, for local Lambda testing)
+- **Node.js** LTS recommended
+- **AWS CDK**
+- **Docker** optional, for local Lambda testing
 
 ### Basic Deployment
 

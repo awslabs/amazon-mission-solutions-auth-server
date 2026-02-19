@@ -47,7 +47,19 @@ cdk/
 │   └── utils/                    # Utility functions
 │       └── keycloak-config-loader.ts # Keycloak auth config loader
 ├── lambda/                       # Lambda function code
-│   └── keycloak-config/          # Keycloak configuration Lambda
+│   └── keycloak-config/          # Keycloak configuration Lambda (TypeScript)
+│       ├── index.ts              # Main Lambda handler
+│       ├── src/                  # Source modules
+│       │   ├── types.ts          # Runtime type definitions
+│       │   ├── config.ts         # Environment variable parsing
+│       │   ├── config-validation.ts # Post-deployment validation
+│       │   ├── aws-utils.ts      # AWS SDK utilities
+│       │   ├── health-check.ts   # Keycloak health monitoring
+│       │   ├── keycloak-api.ts   # Keycloak Admin REST API client
+│       │   └── utils.ts          # Retry logic and error handling
+│       ├── test/                 # Lambda unit tests
+│       ├── package.json          # Lambda dependencies
+│       └── tsconfig.json         # TypeScript compiler config
 ├── scripts/                      # Utility scripts
 │   └── run-integration-tests.sh  # Pre-flight wrapper for integration tests
 ├── test/                         # Jest tests
@@ -63,11 +75,11 @@ cdk/
 
 ### Prerequisites
 
-- **Node.js** 24+ (LTS recommended)
-- **TypeScript** 5.8.3+
+- **Node.js** LTS recommended
+- **TypeScript**
 - **AWS CLI** configured with appropriate credentials
-- **AWS CDK** 2.207.0+ installed (`npm install -g aws-cdk@^2.207.0`)
-- **Docker** (optional, for local Lambda testing)
+- **AWS CDK**
+- **Docker** optional, for local Lambda testing
 
 ### Quick Start
 
@@ -157,7 +169,15 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
           "generatePassword": true,
           "email": "service@example.com"
         }
-      ]
+      ],
+      "roles": {
+        "realm": [
+          {
+            "name": "admin",
+            "description": "Administrator role"
+          }
+        ]
+      }
     }
   }
 }
@@ -210,6 +230,8 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
 | `ECS_CPU_UTILIZATION_TARGET` | number  | `75`                                 | Auto-scaling CPU target (%)                                                           |
 | `JAVA_OPTS`                  | string  | `"-server -Xms1024m -Xmx1638m"`      | JVM options                                                                           |
 | `DATABASE_INSTANCE_TYPE`     | string  | `"r5.large"`                         | RDS instance type                                                                     |
+| `DATABASE_PORT`              | number  | `3306`                               | RDS database port (non-default recommended for NAG RDS11 compliance)                  |
+| `BACKTRACK_WINDOW_SECONDS`   | number  | -                                    | Aurora MySQL backtrack window in seconds (max 259200, omit to disable)                |
 | `DOMAIN_HOSTNAME`            | string  | -                                    | Custom domain hostname (defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` if not provided) |
 | `DOMAIN_INTERNET_FACING`     | boolean | `true`                               | Internet-facing load balancer                                                         |
 | `DOMAIN_CERTIFICATE_ARN`     | string  | -                                    | ACM certificate ARN (optional if `DOMAIN_HOSTED_ZONE_ID` provided)                    |
@@ -221,13 +243,54 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
 
 This optional section configures Keycloak realms, clients, and users. When provided, a Lambda function is created to automatically configure Keycloak on deployment.
 
-| Field         | Type    | Description                    |
-| ------------- | ------- | ------------------------------ |
-| `realm`       | string  | Realm name                     |
-| `enabled`     | boolean | Whether the realm is enabled   |
-| `displayName` | string  | Display name for the realm     |
-| `clients`     | array   | Array of client configurations |
-| `users`       | array   | Array of user configurations   |
+| Field         | Type    | Description                       |
+| ------------- | ------- | --------------------------------- |
+| `realm`       | string  | Realm name                        |
+| `enabled`     | boolean | Whether the realm is enabled      |
+| `displayName` | string  | Display name for the realm        |
+| `clients`     | array   | Array of client configurations    |
+| `users`       | array   | Array of user configurations      |
+| `roles`       | object  | Realm role definitions (optional) |
+
+**Client Configuration Fields:**
+
+| Field                          | Type     | Required | Description                                                                 |
+| ------------------------------ | -------- | -------- | --------------------------------------------------------------------------- |
+| `clientId`                     | string   | Yes      | Unique client identifier                                                    |
+| `name`                         | string   | No       | Display name                                                                |
+| `description`                  | string   | No       | Client description                                                          |
+| `publicClient`                 | boolean  | Yes      | Public client (no client secret)                                            |
+| `authorizationServicesEnabled` | boolean  | Yes      | Enable fine-grained authorization                                           |
+| `standardFlowEnabled`          | boolean  | No       | Enable Authorization Code flow                                              |
+| `directAccessGrantsEnabled`    | boolean  | No       | Enable Resource Owner Password Credentials grant                            |
+| `implicitFlowEnabled`          | boolean  | No       | Enable Implicit flow                                                        |
+| `serviceAccountsEnabled`       | boolean  | No       | Enable Client Credentials grant                                             |
+| `websiteUri`                   | string   | No       | Base URI used for placeholder replacement                                   |
+| `redirectUris`                 | string[] | No       | Allowed redirect URIs (supports `__PLACEHOLDER_REDIRECT_URI__`)             |
+| `postLogoutRedirectUris`       | string[] | No       | Allowed post-logout redirect URIs (supports `__PLACEHOLDER_REDIRECT_URI__`) |
+| `webOrigins`                   | string[] | No       | Allowed CORS origins (supports `__PLACEHOLDER_WEB_ORIGIN__`)                |
+
+**User Configuration Fields:**
+
+| Field              | Type    | Required | Description                                                        |
+| ------------------ | ------- | -------- | ------------------------------------------------------------------ |
+| `username`         | string  | Yes      | Keycloak username                                                  |
+| `generatePassword` | boolean | Yes      | Auto-generate password stored in Secrets Manager                   |
+| `ssmPasswordPath`  | string  | No       | Custom Secrets Manager path (default: `users/{username}/password`) |
+| `email`            | string  | No       | User email address                                                 |
+| `firstName`        | string  | No       | User first name                                                    |
+| `lastName`         | string  | No       | User last name                                                     |
+| `enabled`          | boolean | No       | Whether the user is enabled                                        |
+
+**Role Configuration:**
+
+The `roles` object contains realm-level role definitions:
+
+| Field                       | Type   | Required | Description                 |
+| --------------------------- | ------ | -------- | --------------------------- |
+| `roles.realm`               | array  | No       | Array of realm role objects |
+| `roles.realm[].name`        | string | Yes      | Role name                   |
+| `roles.realm[].description` | string | No       | Role description            |
 
 **Placeholder Replacement in Auth Config:**
 
@@ -303,7 +366,8 @@ Production deployment with enhanced security:
     "DOMAIN_HOSTNAME": "auth.example.com",
     "DOMAIN_INTERNET_FACING": true,
     "DOMAIN_CERTIFICATE_ARN": "arn:aws:acm:...",
-    "DOMAIN_HOSTED_ZONE_ID": "Z..."
+    "DOMAIN_HOSTED_ZONE_ID": "Z...",
+    "DOMAIN_HOSTED_ZONE_NAME": "example.com"
   }
 }
 ```
