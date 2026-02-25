@@ -1,0 +1,30 @@
+name: Mirror to CodeCommit
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history required for PicaPica
+
+      - name: Setup AWS OIDC
+        uses: ./.github/actions/setup-aws-oidc
+        with:
+          aws_region: us-west-2
+          account_id: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+
+      - name: Push to CodeCommit
+        run: |
+          pip install git-remote-codecommit
+          git remote add codecommit codecommit::us-west-2://AmazonMissionSolutionsAuthServer
+          git push codecommit HEAD:refs/heads/mainline
+          git push codecommit --tags
