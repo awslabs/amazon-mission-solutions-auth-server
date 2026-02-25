@@ -10,6 +10,7 @@ cdk/cdk-nag-suppressions-report.txt
 **/node_modules/
 **/dist/
 **/.build/
+**/.bundle/
 **/.env
 **/coverage/
 

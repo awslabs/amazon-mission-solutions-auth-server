@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CustomResource, Duration, RemovalPolicy } from 'aws-cdk-lib';
@@ -14,7 +14,6 @@ import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Provider } from 'aws-cdk-lib/custom-resources';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
-import { copySync } from 'fs-extra';
 
 import { KeycloakCustomConfig } from '../../utils/keycloak-config-loader';
 import { OSMLAccount } from '../types';
@@ -111,6 +110,15 @@ export class KeycloakConfig extends Construct {
 
     logGroup.grantWrite(this.lambdaRoles.configLambdaRole);
 
+    const lambdaPath = join(__dirname, '..', '..', '..', 'lambda', 'keycloak-config');
+    const bundlePath = join(lambdaPath, '.bundle');
+
+    if (!existsSync(bundlePath)) {
+      throw new Error(
+        'Lambda bundle not found at ' + bundlePath + '. Run "npm run build" before "cdk synth".',
+      );
+    }
+
     this.configFunction = new Function(this, 'Function', {
       functionName: `${projectName}-AuthConfigLambdaFunction`,
       runtime: Runtime.NODEJS_24_X,
@@ -119,69 +127,7 @@ export class KeycloakConfig extends Construct {
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [props.securityGroup],
-      code: Code.fromAsset(join(__dirname, '..', '..', '..', 'lambda', 'keycloak-config'), {
-        // Exclude build artifacts and dependencies from asset fingerprinting.
-        // The bundling step handles its own dependency installation.
-        exclude: ['node_modules', 'dist', 'dist-test'],
-        bundling: {
-          local: {
-            tryBundle(outputDir: string): boolean {
-              try {
-                const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-                const lambdaPath = join(__dirname, '..', '..', '..', 'lambda', 'keycloak-config');
-
-                // Install all dependencies (including devDeps for TypeScript compilation)
-                spawnSync(npmCmd, ['ci'], {
-                  cwd: lambdaPath,
-                  stdio: 'inherit',
-                });
-
-                // Compile TypeScript to dist/
-                spawnSync(npxCmd, ['tsc', '--project', 'tsconfig.json'], {
-                  cwd: lambdaPath,
-                  stdio: 'inherit',
-                });
-
-                // Copy compiled output to bundle
-                copySync(join(lambdaPath, 'dist'), outputDir);
-
-                // Copy package files and install production-only dependencies
-                copySync(join(lambdaPath, 'package.json'), join(outputDir, 'package.json'));
-                copySync(
-                  join(lambdaPath, 'package-lock.json'),
-                  join(outputDir, 'package-lock.json'),
-                );
-
-                spawnSync(npmCmd, ['install', '--omit=dev'], {
-                  cwd: outputDir,
-                  stdio: 'inherit',
-                });
-
-                return true;
-              } catch {
-                return false;
-              }
-            },
-          },
-          image: Runtime.NODEJS_24_X.bundlingImage,
-          command: [
-            'bash',
-            '-c',
-            [
-              'mkdir -p /tmp/npm-cache',
-              'npm config set cache /tmp/npm-cache',
-              'cd /asset-input',
-              'npm ci',
-              'npx tsc --project tsconfig.json',
-              'cp -r dist/* /asset-output/',
-              'cp package.json package-lock.json /asset-output/',
-              'cd /asset-output',
-              'npm install --omit=dev',
-            ].join(' && '),
-          ],
-        },
-      }),
+      code: Code.fromAsset(bundlePath),
       timeout: Duration.minutes(15),
       memorySize: 256,
       environment: {

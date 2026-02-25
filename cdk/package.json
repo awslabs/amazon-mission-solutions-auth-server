@@ -1,6 +1,6 @@
 {
   "name": "ams-auth-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AWS CDK project to deploy Keycloak authentication server",
   "author": "Amazon Web Services",
   "license": "Apache-2.0",
@@ -9,7 +9,8 @@
     "app": "bin/app.js"
   },
   "scripts": {
-    "build": "tsc",
+    "prebundle:lambda": "cd lambda/keycloak-config && npm ci && npx tsc && mkdir -p .bundle && cp -r dist/* .bundle/ && cp package.json package-lock.json .bundle/ && cd .bundle && npm install --omit=dev",
+    "build": "npm run prebundle:lambda && tsc",
     "watch": "tsc -w",
     "test": "jest --selectProjects cdk keycloak-lambda",
     "test:integration": "jest --selectProjects integration --no-coverage",
@@ -20,12 +21,11 @@
     "@aws-sdk/client-secrets-manager": "^3.993.0",
     "@eslint/js": "^9.39.1",
     "@types/babel__core": "^7.20.5",
-    "@types/fs-extra": "^11.0.4",
     "@types/jest": "^30.0.0",
     "@types/node": "24.1.0",
     "@typescript-eslint/eslint-plugin": "^8.47.0",
     "@typescript-eslint/parser": "^8.47.0",
-    "aws-cdk": "2.1100.1",
+    "aws-cdk": "2.1107.0",
     "axios": "^1.13.5",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
@@ -46,7 +46,6 @@
     "aws-cdk-lib": "^2.233.0",
     "cdk-nag": "^2.37.55",
     "constructs": "^10.4.2",
-    "fs-extra": "^11.3.0",
     "source-map-support": "^0.5.21"
   }
 }
