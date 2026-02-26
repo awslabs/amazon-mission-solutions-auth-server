@@ -1,13 +1,14 @@
 {
   "name": "ams-auth-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AWS CDK project to deploy Keycloak authentication server",
   "author": "Amazon Web Services",
   "license": "Apache-2.0",
-  "private": true,
   "bin": {
     "app": "bin/app.js"
   },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "prebundle:lambda": "cd lambda/keycloak-config && npm ci && npx tsc && mkdir -p .bundle && cp -r dist/* .bundle/ && cp package.json package-lock.json .bundle/ && cd .bundle && npm install --omit=dev",
     "build": "npm run prebundle:lambda && tsc",

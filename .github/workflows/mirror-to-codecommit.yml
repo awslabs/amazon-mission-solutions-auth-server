@@ -22,6 +22,28 @@ jobs:
           aws_region: us-west-2
           account_id: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
 
+      - name: Inject build config
+        run: |
+          # Inject Config from repo variable
+          echo '${{ vars.CONFIG }}' > Config
+
+          # Generate root package.json from cdk/package.json for mirror build
+          jq '{
+            name: "${{ vars.MIRROR_PACKAGE_NAME }}",
+            version: .version,
+            description: .description,
+            main: "cdk/dist/index.js",
+            types: "cdk/dist/index.d.ts",
+            license: "UNLICENSED",
+            scripts: { build: "cd cdk && npm ci && npm run build", test: "cd cdk && npm test" },
+            dependencies: .dependencies
+          }' cdk/package.json > package.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Config package.json
+          git commit -m "chore: inject build config for mirror"
+
       - name: Push to CodeCommit
         run: |
           pip install git-remote-codecommit
