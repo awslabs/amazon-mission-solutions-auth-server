@@ -35,7 +35,7 @@ jobs:
             main: "cdk/dist/index.js",
             types: "cdk/dist/index.d.ts",
             license: "UNLICENSED",
-            scripts: { build: "cd cdk && npm ci && npm run build", test: "cd cdk && npm test" },
+            scripts: { build: "cd cdk && npm ci && npm run build", test: "cd cdk && npm ci && npm test" },
             dependencies: .dependencies
           }' cdk/package.json > package.json
 
