@@ -22,12 +22,28 @@ jobs:
           aws_region: us-west-2
           account_id: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
 
-      - name: Inject build config
+      - name: Push to CodeCommit
         run: |
+          pip install git-remote-codecommit
+          git remote add codecommit codecommit::us-west-2://AmazonMissionSolutionsAuthServer
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch CodeCommit's current state (includes previous injection commits)
+          git fetch codecommit mainline || true
+
+          # Rebase our branch on top of CodeCommit's mainline so the push is fast-forward.
+          # This places the previous injection commit(s) in our history.
+          if git rev-parse codecommit/mainline &>/dev/null; then
+            git rebase codecommit/mainline
+          fi
+
           # Inject Config from repo variable
           echo '${{ vars.CONFIG }}' > Config
 
-          # Generate root package.json from cdk/package.json for mirror build
+          # Generate root package.json from cdk/package.json for mirror build.
+          # Lock file is removed so npm resolves from available registry versions
+          # rather than demanding exact versions that may not be mirrored yet.
           jq '{
             name: "${{ vars.MIRROR_PACKAGE_NAME }}",
             version: .version,
@@ -35,18 +51,16 @@ jobs:
             main: "cdk/dist/index.js",
             types: "cdk/dist/index.d.ts",
             license: "UNLICENSED",
-            scripts: { build: "cd cdk && npm ci && npm run build", test: "cd cdk && npm ci && npm test" },
+            scripts: {
+              build: "cd cdk && rm -f package-lock.json && npm install && npm run build",
+              test: "cd cdk && rm -f package-lock.json && npm install && npm run prebundle:lambda && npm test"
+            },
             dependencies: .dependencies
           }' cdk/package.json > package.json
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Config package.json
           git commit -m "chore: inject build config for mirror"
 
-      - name: Push to CodeCommit
-        run: |
-          pip install git-remote-codecommit
-          git remote add codecommit codecommit::us-west-2://AmazonMissionSolutionsAuthServer
+          # Push (fast-forward since we rebased on CodeCommit's mainline)
           git push codecommit HEAD:refs/heads/mainline
           git push codecommit --tags
