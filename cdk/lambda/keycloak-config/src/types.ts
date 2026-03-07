@@ -10,30 +10,32 @@
  * generatePassword and ssmPasswordPath that don't exist at runtime).
  */
 
-/** CloudFormation Custom Resource event from CDK Provider framework. */
+/** CloudFormation Custom Resource event received by the Lambda handler. */
 export interface CloudFormationCustomResourceEvent {
   RequestType: 'Create' | 'Update' | 'Delete';
+  ServiceToken: string;
+  ResponseURL: string;
+  StackId: string;
+  RequestId: string;
+  ResourceType: string;
+  LogicalResourceId: string;
   PhysicalResourceId?: string;
-  ResourceProperties?: Record<string, unknown>;
+  ResourceProperties: Record<string, unknown>;
   OldResourceProperties?: Record<string, unknown>;
-  StackId?: string;
-  RequestId?: string;
-  LogicalResourceId?: string;
 }
 
-/** Response shape expected by CDK Provider framework. */
+/** Response returned by the Lambda handler for the Provider framework. */
 export interface ProviderResponse {
   Status: 'SUCCESS' | 'FAILED';
   PhysicalResourceId: string;
-  Reason?: string;
   Data?: Record<string, unknown>;
+  Reason?: string;
 }
 
 /** Runtime configuration loaded from environment variables. */
 export interface AppConfig {
-  KEYCLOAK_URL: string;
+  SSM_PREFIX: string;
   KEYCLOAK_ADMIN_USERNAME: string;
-  KEYCLOAK_ADMIN_SECRET_ARN: string;
   WEBSITE_URI: string;
   AUTH_CONFIG: string;
   USER_PASSWORD_SECRETS: string;

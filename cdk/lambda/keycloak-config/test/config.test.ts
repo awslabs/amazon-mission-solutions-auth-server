@@ -4,15 +4,13 @@
 
 describe('config', () => {
   const REQUIRED_ENVS: Record<string, string> = {
-    KEYCLOAK_URL: 'https://keycloak.example.com',
-    KEYCLOAK_ADMIN_SECRET_ARN: 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
+    SSM_PREFIX: '/test-project/auth',
   };
 
   beforeEach(() => {
     jest.resetModules();
     // Clear all relevant env vars
-    delete process.env.KEYCLOAK_URL;
-    delete process.env.KEYCLOAK_ADMIN_SECRET_ARN;
+    delete process.env.SSM_PREFIX;
     delete process.env.KEYCLOAK_ADMIN_USERNAME;
     delete process.env.WEBSITE_URI;
     delete process.env.AUTH_CONFIG;
@@ -30,30 +28,15 @@ describe('config', () => {
   }
 
   describe('environment variable loading', () => {
-    test('loads required KEYCLOAK_URL from env', () => {
+    test('loads required SSM_PREFIX from env', () => {
       const config = loadConfig();
-      expect(config.KEYCLOAK_URL).toBe('https://keycloak.example.com');
+      expect(config.SSM_PREFIX).toBe('/test-project/auth');
     });
 
-    test('loads required KEYCLOAK_ADMIN_SECRET_ARN from env', () => {
-      const config = loadConfig();
-      expect(config.KEYCLOAK_ADMIN_SECRET_ARN).toBe(
-        'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
-      );
-    });
-
-    test('throws when required KEYCLOAK_URL is missing', () => {
-      delete process.env.KEYCLOAK_URL;
-      process.env.KEYCLOAK_ADMIN_SECRET_ARN = REQUIRED_ENVS.KEYCLOAK_ADMIN_SECRET_ARN;
+    test('throws when required SSM_PREFIX is missing', () => {
+      delete process.env.SSM_PREFIX;
       expect(() => require('../src/config')).toThrow(
-        'Required environment variable KEYCLOAK_URL is not set',
-      );
-    });
-
-    test('throws when required KEYCLOAK_ADMIN_SECRET_ARN is missing', () => {
-      process.env.KEYCLOAK_URL = REQUIRED_ENVS.KEYCLOAK_URL;
-      expect(() => require('../src/config')).toThrow(
-        'Required environment variable KEYCLOAK_ADMIN_SECRET_ARN is not set',
+        'Required environment variable SSM_PREFIX is not set',
       );
     });
 

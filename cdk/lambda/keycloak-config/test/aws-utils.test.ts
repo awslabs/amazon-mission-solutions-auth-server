@@ -2,6 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+export {};
 const mockSend = jest.fn();
 
 jest.mock('@aws-sdk/client-secrets-manager', () => ({
@@ -9,15 +10,21 @@ jest.mock('@aws-sdk/client-secrets-manager', () => ({
   GetSecretValueCommand: jest.fn((input: unknown) => ({ input })),
 }));
 
+jest.mock('@aws-sdk/client-ssm', () => ({
+  SSMClient: jest.fn(() => ({ send: mockSend })),
+  GetParameterCommand: jest.fn((input: unknown) => ({ input })),
+}));
+
 jest.mock('../src/config', () => require('./mock-helpers').createConfigMock());
 
 const config = require('../src/config');
 const { getAdminCredentials, getOrCreateUserPassword } = require('../src/aws-utils');
 
+const TEST_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-secret';
+
 describe('aws-utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    config.KEYCLOAK_ADMIN_SECRET_ARN = 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin';
     config.KEYCLOAK_ADMIN_USERNAME = 'keycloak';
   });
 
@@ -26,37 +33,42 @@ describe('aws-utils', () => {
       mockSend.mockResolvedValue({
         SecretString: JSON.stringify({ username: 'keycloak', password: 'secret123' }),
       });
-      const result = await getAdminCredentials();
+      const result = await getAdminCredentials(TEST_SECRET_ARN);
       expect(result).toEqual({ username: 'keycloak', password: 'secret123' });
       expect(mockSend).toHaveBeenCalledWith({
-        input: { SecretId: config.KEYCLOAK_ADMIN_SECRET_ARN },
+        input: { SecretId: TEST_SECRET_ARN },
       });
     });
 
-    test('throws when KEYCLOAK_ADMIN_SECRET_ARN is falsy', async () => {
-      config.KEYCLOAK_ADMIN_SECRET_ARN = '';
-      await expect(getAdminCredentials()).rejects.toThrow(
+    test('throws when secretArn is falsy', async () => {
+      await expect(getAdminCredentials('')).rejects.toThrow(
         'Keycloak admin secret ARN is not provided',
       );
     });
 
     test('throws for binary secret (no SecretString)', async () => {
       mockSend.mockResolvedValue({ SecretBinary: Buffer.from('binary') });
-      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
+      await expect(getAdminCredentials(TEST_SECRET_ARN)).rejects.toThrow(
+        'Failed to retrieve admin credentials',
+      );
     });
 
     test('throws when secret missing username key', async () => {
       mockSend.mockResolvedValue({
         SecretString: JSON.stringify({ password: 'secret123' }),
       });
-      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
+      await expect(getAdminCredentials(TEST_SECRET_ARN)).rejects.toThrow(
+        'Failed to retrieve admin credentials',
+      );
     });
 
     test('throws when secret missing password key', async () => {
       mockSend.mockResolvedValue({
         SecretString: JSON.stringify({ username: 'keycloak' }),
       });
-      await expect(getAdminCredentials()).rejects.toThrow('Failed to retrieve admin credentials');
+      await expect(getAdminCredentials(TEST_SECRET_ARN)).rejects.toThrow(
+        'Failed to retrieve admin credentials',
+      );
     });
 
     test('warns but succeeds when username does not match config', async () => {
@@ -67,7 +79,7 @@ describe('aws-utils', () => {
           password: 'secret123',
         }),
       });
-      const result = await getAdminCredentials();
+      const result = await getAdminCredentials(TEST_SECRET_ARN);
       expect(result).toEqual({ username: 'different-admin', password: 'secret123' });
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('does not match configured admin username'),
@@ -76,7 +88,7 @@ describe('aws-utils', () => {
 
     test('wraps errors with descriptive message', async () => {
       mockSend.mockRejectedValue(new Error('AWS SDK error'));
-      await expect(getAdminCredentials()).rejects.toThrow(
+      await expect(getAdminCredentials(TEST_SECRET_ARN)).rejects.toThrow(
         'Failed to retrieve admin credentials: AWS SDK error',
       );
     });

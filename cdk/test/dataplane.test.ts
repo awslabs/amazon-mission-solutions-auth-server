@@ -2,6 +2,25 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+jest.mock('node:fs', () => {
+  const actual: Record<string, unknown> = jest.requireActual('node:fs');
+  return {
+    ...actual,
+    existsSync: jest.fn().mockImplementation((path: string) => {
+      // Always return true for the Lambda bundle path check
+      if (
+        typeof path === 'string' &&
+        path.includes('keycloak-config') &&
+        path.endsWith('.bundle')
+      ) {
+        return true;
+      }
+      // Delegate everything else to the real implementation
+      return (actual.existsSync as (p: string) => boolean)(path);
+    }),
+  };
+});
+
 import { App, Aspects, Stack } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { SecurityGroup, Vpc } from 'aws-cdk-lib/aws-ec2';
@@ -322,7 +341,7 @@ describe('Dataplane construct', () => {
       });
     });
 
-    test('config Lambda has dependencies on service and database', () => {
+    test('custom resource has dependency on KeycloakService', () => {
       const dataplane = new Dataplane(stack, 'Dataplane', {
         account: createTestAccount(),
         vpc,
@@ -333,9 +352,9 @@ describe('Dataplane construct', () => {
         }),
       });
 
-      // Verify dependencies are set
-      const configLambdaDeps = dataplane.configLambda!.node.dependencies;
-      expect(configLambdaDeps.length).toBeGreaterThan(0);
+      // Only the custom resource (not the whole construct) depends on the service
+      const customResourceDeps = dataplane.configLambda!.customResource.node.dependencies;
+      expect(customResourceDeps.length).toBeGreaterThan(0);
     });
   });
 
@@ -798,5 +817,484 @@ describe('cdk-nag Compliance Checks - Dataplane', () => {
       Match.stringLikeRegexp('AwsSolutions-.*'),
     );
     expect(warnings).toHaveLength(0);
+  });
+});
+
+describe('Database SSM parameter publication', () => {
+  let app: App;
+  let stack: Stack;
+  let vpc: Vpc;
+  let securityGroup: SecurityGroup;
+
+  beforeEach(() => {
+    app = new App();
+    stack = new Stack(app, 'TestStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    vpc = new Vpc(stack, 'TestVpc', { maxAzs: 2 });
+    securityGroup = new SecurityGroup(stack, 'TestSG', {
+      vpc,
+      description: 'Test security group',
+    });
+  });
+
+  test('creates SSM parameters for database endpoint, port, and secret-arn', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Verify the three database SSM parameters exist with correct paths
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: Match.stringLikeRegexp('.*/auth/database/endpoint'),
+    });
+
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: Match.stringLikeRegexp('.*/auth/database/port'),
+    });
+
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: Match.stringLikeRegexp('.*/auth/database/secret-arn'),
+    });
+  });
+
+  test('database SSM parameter values reference Aurora cluster properties', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+    const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;
+
+    // Find all SSM parameters under the database prefix
+    const dbSsmParams = Object.entries(resources).filter(([, resource]) => {
+      if (resource.Type !== 'AWS::SSM::Parameter') return false;
+      const props = resource.Properties as Record<string, unknown>;
+      const name = props.Name as string | undefined;
+      return name && typeof name === 'string' && name.includes('/auth/database/');
+    });
+
+    expect(dbSsmParams.length).toBe(3);
+
+    // Verify endpoint value references the DB cluster endpoint
+    const endpointParam = dbSsmParams.find(([, r]) => {
+      const props = r.Properties as Record<string, unknown>;
+      return (props.Name as string).endsWith('/endpoint');
+    });
+    expect(endpointParam).toBeDefined();
+    const endpointValue = (endpointParam![1].Properties as Record<string, unknown>).Value;
+    expect(JSON.stringify(endpointValue)).toContain('Endpoint.Address');
+
+    // Verify port value references the DB cluster port
+    const portParam = dbSsmParams.find(([, r]) => {
+      const props = r.Properties as Record<string, unknown>;
+      return (props.Name as string).endsWith('/port');
+    });
+    expect(portParam).toBeDefined();
+    const portValue = (portParam![1].Properties as Record<string, unknown>).Value;
+    expect(JSON.stringify(portValue)).toContain('Endpoint.Port');
+
+    // Verify secret-arn value references the secret
+    const secretArnParam = dbSsmParams.find(([, r]) => {
+      const props = r.Properties as Record<string, unknown>;
+      return (props.Name as string).endsWith('/secret-arn');
+    });
+    expect(secretArnParam).toBeDefined();
+    const secretArnValue = (secretArnParam![1].Properties as Record<string, unknown>).Value;
+    expect(JSON.stringify(secretArnValue)).toMatch(/Ref|Fn::GetAtt|secretsmanager/i);
+  });
+
+  test('without KEYCLOAK_AUTH_CONFIG, Dataplane has exactly 5 SSM parameters (3 database + 2 keycloak service)', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::SSM::Parameter', 5);
+  });
+});
+
+describe('KeycloakService SSM and image sourcing', () => {
+  let app: App;
+  let stack: Stack;
+  let vpc: Vpc;
+  let securityGroup: SecurityGroup;
+
+  beforeEach(() => {
+    app = new App();
+    stack = new Stack(app, 'TestStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    vpc = new Vpc(stack, 'TestVpc', { maxAzs: 2 });
+    securityGroup = new SecurityGroup(stack, 'TestSG', {
+      vpc,
+      description: 'Test security group',
+    });
+  });
+
+  test('creates SSM parameters for keycloak url and admin-secret-arn', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: Match.stringLikeRegexp('.*/auth/keycloak/url'),
+    });
+
+    template.hasResourceProperties('AWS::SSM::Parameter', {
+      Name: Match.stringLikeRegexp('.*/auth/keycloak/admin-secret-arn'),
+    });
+  });
+
+  test('uses ContainerImage.fromAsset by default (no KEYCLOAK_WRAPPER_IMAGE)', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    // When using fromAsset, the container image in the task definition references a CDK asset
+    // (not a registry URI like quay.io or ecr). CDK asset images use a hash-based reference.
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Image: Match.objectLike({
+            'Fn::Sub': Match.anyValue(),
+          }),
+        }),
+      ]),
+    });
+  });
+
+  test('uses ContainerImage.fromRegistry when KEYCLOAK_WRAPPER_IMAGE is set', () => {
+    const wrapperImageUri = 'test-registry.example.com/keycloak-wrapper:latest';
+
+    const wrapperStack = new Stack(app, 'WrapperStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    const wrapperVpc = new Vpc(wrapperStack, 'TestVpc', { maxAzs: 2 });
+    const wrapperSg = new SecurityGroup(wrapperStack, 'TestSG', {
+      vpc: wrapperVpc,
+      description: 'Test security group',
+    });
+
+    new Dataplane(wrapperStack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc: wrapperVpc,
+      securityGroup: wrapperSg,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_WRAPPER_IMAGE: wrapperImageUri,
+      }),
+    });
+
+    const template = Template.fromStack(wrapperStack);
+
+    // When using fromRegistry, the image is the literal URI string
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Image: wrapperImageUri,
+        }),
+      ]),
+    });
+  });
+
+  test('ECS task role has ssm:GetParameter scoped to database prefix', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Verify IAM policy with ssm:GetParameter scoped to database prefix
+    const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;
+    const policies = Object.values(resources).filter(r => r.Type === 'AWS::IAM::Policy');
+    const hasSsmDbPolicy = policies.some(policy => {
+      const doc = (policy.Properties as Record<string, unknown>).PolicyDocument as Record<
+        string,
+        unknown
+      >;
+      const statements = (doc.Statement as Record<string, unknown>[]) || [];
+      return statements.some(stmt => {
+        const action = stmt.Action;
+        const resource = JSON.stringify(stmt.Resource || '');
+        return action === 'ssm:GetParameter' && resource.includes('/auth/database/*');
+      });
+    });
+    expect(hasSsmDbPolicy).toBe(true);
+  });
+
+  test('KC_DB_PASSWORD is injected via ECS Secrets Manager integration', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Verify KC_DB_PASSWORD is injected as a secret (not an environment variable)
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Secrets: Match.arrayWith([
+            Match.objectLike({
+              Name: 'KC_DB_PASSWORD',
+            }),
+          ]),
+        }),
+      ]),
+    });
+  });
+
+  test('container environment has SSM_PREFIX variable', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Environment: Match.arrayWith([
+            Match.objectLike({
+              Name: 'SSM_PREFIX',
+              Value: '/test-project/auth',
+            }),
+          ]),
+        }),
+      ]),
+    });
+  });
+});
+
+describe('KeycloakConfig custom resource architecture', () => {
+  let app: App;
+  let stack: Stack;
+  let vpc: Vpc;
+  let securityGroup: SecurityGroup;
+
+  beforeEach(() => {
+    app = new App();
+    stack = new Stack(app, 'TestStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    vpc = new Vpc(stack, 'TestVpc', { maxAzs: 2 });
+    securityGroup = new SecurityGroup(stack, 'TestSG', {
+      vpc,
+      description: 'Test security group',
+    });
+
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_AUTH_CONFIG: createTestAuthConfig(),
+      }),
+    });
+  });
+
+  test('Custom::KeycloakConfig resource exists in template', () => {
+    const template = Template.fromStack(stack);
+    const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;
+
+    const keycloakCustomResources = Object.entries(resources).filter(([, resource]) => {
+      const type = resource.Type as string;
+      return type === 'Custom::KeycloakConfig';
+    });
+
+    expect(keycloakCustomResources).toHaveLength(1);
+  });
+
+  test('no SQS queues in template', () => {
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::SQS::Queue', 0);
+  });
+
+  test('no EventBridge rules in template', () => {
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::Events::Rule', 0);
+  });
+
+  test('no SQS event source mapping in template', () => {
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::Lambda::EventSourceMapping', 0);
+  });
+
+  test('no CloudWatch alarm for DLQ in template', () => {
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::CloudWatch::Alarm', 0);
+  });
+
+  test('Lambda environment has SSM_PREFIX instead of KEYCLOAK_URL/KEYCLOAK_ADMIN_SECRET_ARN', () => {
+    const template = Template.fromStack(stack);
+
+    // Verify SSM_PREFIX is set
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: Match.objectLike({
+        Variables: Match.objectLike({
+          SSM_PREFIX: Match.stringLikeRegexp('.*/auth'),
+        }),
+      }),
+    });
+
+    // Verify KEYCLOAK_URL and KEYCLOAK_ADMIN_SECRET_ARN are NOT in the environment
+    const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;
+    const lambdaFunctions = Object.entries(resources).filter(
+      ([, resource]) => resource.Type === 'AWS::Lambda::Function',
+    );
+
+    for (const [, resource] of lambdaFunctions) {
+      const props = resource.Properties as Record<string, unknown>;
+      const env = props.Environment as Record<string, unknown> | undefined;
+      if (env) {
+        const vars = env.Variables as Record<string, unknown> | undefined;
+        if (vars) {
+          expect(vars).not.toHaveProperty('KEYCLOAK_URL');
+          expect(vars).not.toHaveProperty('KEYCLOAK_ADMIN_SECRET_ARN');
+        }
+      }
+    }
+  });
+});
+
+describe('Dataplane decoupling', () => {
+  let app: App;
+  let stack: Stack;
+  let vpc: Vpc;
+  let securityGroup: SecurityGroup;
+
+  beforeEach(() => {
+    app = new App();
+    stack = new Stack(app, 'TestStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    vpc = new Vpc(stack, 'TestVpc', { maxAzs: 2 });
+    securityGroup = new SecurityGroup(stack, 'TestSG', {
+      vpc,
+      description: 'Test security group',
+    });
+  });
+
+  test('Custom::KeycloakConfig resource has DependsOn to KeycloakService', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_AUTH_CONFIG: createTestAuthConfig(),
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+    const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;
+
+    // Find the Custom::KeycloakConfig resource
+    const customResourceEntries = Object.entries(resources).filter(([, resource]) => {
+      const type = resource.Type as string;
+      return type === 'Custom::KeycloakConfig';
+    });
+
+    expect(customResourceEntries.length).toBe(1);
+
+    // The custom resource should have dependencies (via node.addDependency on KeycloakService)
+    const [, customResource] = customResourceEntries[0];
+    const dependsOn = customResource.DependsOn as string[] | string | undefined;
+    expect(dependsOn).toBeDefined();
+  });
+
+  test('no databaseHost, databasePort, or databaseSecret props threaded in template', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_AUTH_CONFIG: createTestAuthConfig(),
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+    const templateJson = JSON.stringify(template.toJSON());
+
+    // These prop names should not appear anywhere in the synthesized template
+    // because they were removed during decoupling
+    expect(templateJson).not.toContain('"databaseHost"');
+    expect(templateJson).not.toContain('"databasePort"');
+    expect(templateJson).not.toContain('"databaseSecret"');
+  });
+
+  test('security group ingress rule preserved for MySQL from Keycloak service SG', () => {
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      config: new DataplaneConfig({
+        DOMAIN_INTERNET_FACING: false,
+        KEYCLOAK_AUTH_CONFIG: createTestAuthConfig(),
+      }),
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Database security group should still allow MySQL (3306) from Keycloak service SG
+    template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+      IpProtocol: 'tcp',
+      FromPort: 3306,
+      ToPort: 3306,
+    });
   });
 });

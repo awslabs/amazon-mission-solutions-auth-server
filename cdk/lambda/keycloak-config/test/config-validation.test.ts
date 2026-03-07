@@ -2,6 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+export {};
 jest.mock('../src/config', () => require('./mock-helpers').createConfigMock());
 jest.mock('../src/keycloak-api', () => require('./mock-helpers').createKeycloakApiMock());
 jest.mock('../src/utils', () => require('./mock-helpers').createUtilsMock());
@@ -18,6 +19,7 @@ const {
 } = require('../src/config-validation');
 
 const TOKEN = 'test-access-token';
+const KEYCLOAK_URL = 'https://auth.example.com';
 const REALM = 'test-realm';
 
 describe('config-validation', () => {
@@ -45,7 +47,7 @@ describe('config-validation', () => {
 
     test('returns allValid=true when realm, clients, users, roles all valid', async () => {
       const realmConfig = makeRealmConfig();
-      const result = await performValidation(TOKEN, REALM, realmConfig);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, realmConfig);
       expect(result.allValid).toBe(true);
       expect(result.details.realmValid).toBe(true);
       expect(result.details.clientsValid).toBe(true);
@@ -57,7 +59,7 @@ describe('config-validation', () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 404 });
 
       const realmConfig = makeRealmConfig();
-      const result = await performValidation(TOKEN, REALM, realmConfig);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, realmConfig);
       expect(result.allValid).toBe(false);
       expect(result.details.realmValid).toBe(false);
       expect(result.failureReason).toContain('not accessible');
@@ -69,7 +71,7 @@ describe('config-validation', () => {
       const realmConfig = makeRealmConfig({
         clients: [{ clientId: 'missing-client' }],
       });
-      const result = await performValidation(TOKEN, REALM, realmConfig);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, realmConfig);
       expect(result.allValid).toBe(false);
       expect(result.details.realmValid).toBe(true);
       expect(result.details.clientsValid).toBe(false);
@@ -82,7 +84,7 @@ describe('config-validation', () => {
       const realmConfig = makeRealmConfig({
         users: [{ username: 'missing-user' }],
       });
-      const result = await performValidation(TOKEN, REALM, realmConfig);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, realmConfig);
       expect(result.allValid).toBe(false);
       expect(result.details.usersValid).toBe(false);
       expect(result.failureReason).toContain('missing-user');
@@ -94,14 +96,14 @@ describe('config-validation', () => {
       const realmConfig = makeRealmConfig({
         roles: { realm: [{ name: 'missing-role' }] },
       });
-      const result = await performValidation(TOKEN, REALM, realmConfig);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, realmConfig);
       expect(result.allValid).toBe(true);
       expect(result.details.rolesValid).toBe(true);
     });
 
     test('catches thrown errors and returns allValid=false with failureReason', async () => {
       // Null realmConfig triggers a TypeError through the realm validation path
-      const result = await performValidation(TOKEN, REALM, null);
+      const result = await performValidation(TOKEN, KEYCLOAK_URL, REALM, null);
       expect(result.allValid).toBe(false);
       expect(result.failureReason).toContain('Cannot read properties of null');
     });
@@ -113,13 +115,13 @@ describe('config-validation', () => {
         status: 200,
         data: { enabled: true },
       });
-      const result = await validateRealm(TOKEN, REALM, { enabled: true });
+      const result = await validateRealm(TOKEN, KEYCLOAK_URL, REALM, { enabled: true });
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=false when realm GET returns non-200 status', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 404 });
-      const result = await validateRealm(TOKEN, REALM, { enabled: true });
+      const result = await validateRealm(TOKEN, KEYCLOAK_URL, REALM, { enabled: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('not accessible');
     });
@@ -129,14 +131,14 @@ describe('config-validation', () => {
         status: 200,
         data: { enabled: false },
       });
-      const result = await validateRealm(TOKEN, REALM, { enabled: true });
+      const result = await validateRealm(TOKEN, KEYCLOAK_URL, REALM, { enabled: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('enabled status mismatch');
     });
 
     test('returns valid=false with reason on error', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('network fail'));
-      const result = await validateRealm(TOKEN, REALM, { enabled: true });
+      const result = await validateRealm(TOKEN, KEYCLOAK_URL, REALM, { enabled: true });
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('network fail');
     });
@@ -144,12 +146,12 @@ describe('config-validation', () => {
 
   describe('validateClients', () => {
     test('returns valid=true when no clients defined in config', async () => {
-      const result = await validateClients(TOKEN, REALM, {});
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {});
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=true when clients array is empty', async () => {
-      const result = await validateClients(TOKEN, REALM, { clients: [] });
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, { clients: [] });
       expect(result.valid).toBe(true);
     });
 
@@ -163,7 +165,7 @@ describe('config-validation', () => {
         webOrigins: ['https://app.example.com'],
       });
 
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [
           {
             clientId: 'my-client',
@@ -180,7 +182,7 @@ describe('config-validation', () => {
 
     test('returns valid=false when a client is not found', async () => {
       keycloakApi.getClientByClientId.mockResolvedValue(null);
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'ghost' }],
       });
       expect(result.valid).toBe(false);
@@ -192,7 +194,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         publicClient: false,
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', publicClient: true }],
       });
       expect(result.valid).toBe(false);
@@ -204,7 +206,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         standardFlowEnabled: false,
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', standardFlowEnabled: true }],
       });
       expect(result.valid).toBe(false);
@@ -216,7 +218,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         directAccessGrantsEnabled: true,
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', directAccessGrantsEnabled: false }],
       });
       expect(result.valid).toBe(false);
@@ -230,7 +232,7 @@ describe('config-validation', () => {
         standardFlowEnabled: false,
         directAccessGrantsEnabled: false,
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1' }],
       });
       expect(result.valid).toBe(true);
@@ -241,7 +243,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         redirectUris: [],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', redirectUris: ['https://app.com/*'] }],
       });
       expect(result.valid).toBe(false);
@@ -252,7 +254,7 @@ describe('config-validation', () => {
       keycloakApi.getClientByClientId.mockResolvedValue({
         clientId: 'c1',
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', redirectUris: ['https://app.com/*'] }],
       });
       expect(result.valid).toBe(false);
@@ -264,7 +266,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         redirectUris: ['__PLACEHOLDER_REDIRECT_URI__'],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', redirectUris: ['https://app.com/*'] }],
       });
       expect(result.valid).toBe(false);
@@ -276,7 +278,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         redirectUris: ['https://app.com/*'],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', redirectUris: ['https://app.com/*'] }],
       });
       expect(result.valid).toBe(true);
@@ -287,7 +289,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         webOrigins: [],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', webOrigins: ['https://app.com'] }],
       });
       expect(result.valid).toBe(false);
@@ -299,7 +301,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         webOrigins: ['__PLACEHOLDER_WEB_ORIGIN__'],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', webOrigins: ['https://app.com'] }],
       });
       expect(result.valid).toBe(false);
@@ -311,7 +313,7 @@ describe('config-validation', () => {
         clientId: 'c1',
         webOrigins: ['https://app.com'],
       });
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1', webOrigins: ['https://app.com'] }],
       });
       expect(result.valid).toBe(true);
@@ -319,7 +321,7 @@ describe('config-validation', () => {
 
     test('returns valid=false with reason on thrown error', async () => {
       keycloakApi.getClientByClientId.mockRejectedValue(new Error('api down'));
-      const result = await validateClients(TOKEN, REALM, {
+      const result = await validateClients(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1' }],
       });
       expect(result.valid).toBe(false);
@@ -329,12 +331,12 @@ describe('config-validation', () => {
 
   describe('validateUsers', () => {
     test('returns valid=true when no users defined in config', async () => {
-      const result = await validateUsers(TOKEN, REALM, {});
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {});
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=true when users array is empty', async () => {
-      const result = await validateUsers(TOKEN, REALM, { users: [] });
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, { users: [] });
       expect(result.valid).toBe(true);
     });
 
@@ -346,7 +348,7 @@ describe('config-validation', () => {
         lastName: 'User',
       });
 
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [
           {
             username: 'testuser',
@@ -361,7 +363,7 @@ describe('config-validation', () => {
 
     test('returns valid=false when a user is not found', async () => {
       keycloakApi.getUserByUsername.mockResolvedValue(null);
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'ghost' }],
       });
       expect(result.valid).toBe(false);
@@ -373,7 +375,7 @@ describe('config-validation', () => {
         username: 'u1',
         enabled: false,
       });
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'u1', enabled: true }],
       });
       expect(result.valid).toBe(false);
@@ -385,7 +387,7 @@ describe('config-validation', () => {
         username: 'u1',
         firstName: 'Wrong',
       });
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'u1', firstName: 'Correct' }],
       });
       expect(result.valid).toBe(false);
@@ -397,7 +399,7 @@ describe('config-validation', () => {
         username: 'u1',
         lastName: 'Wrong',
       });
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'u1', lastName: 'Correct' }],
       });
       expect(result.valid).toBe(false);
@@ -411,7 +413,7 @@ describe('config-validation', () => {
         firstName: 'Any',
         lastName: 'Name',
       });
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'u1' }],
       });
       expect(result.valid).toBe(true);
@@ -419,7 +421,7 @@ describe('config-validation', () => {
 
     test('returns valid=false with reason on thrown error', async () => {
       keycloakApi.getUserByUsername.mockRejectedValue(new Error('db error'));
-      const result = await validateUsers(TOKEN, REALM, {
+      const result = await validateUsers(TOKEN, KEYCLOAK_URL, REALM, {
         users: [{ username: 'u1' }],
       });
       expect(result.valid).toBe(false);
@@ -429,23 +431,23 @@ describe('config-validation', () => {
 
   describe('validateRoles', () => {
     test('returns valid=true when no roles defined in config', async () => {
-      const result = await validateRoles(TOKEN, REALM, {});
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, {});
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=true when no roles.realm defined', async () => {
-      const result = await validateRoles(TOKEN, REALM, { roles: {} });
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, { roles: {} });
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=true when roles.realm is empty array', async () => {
-      const result = await validateRoles(TOKEN, REALM, { roles: { realm: [] } });
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, { roles: { realm: [] } });
       expect(result.valid).toBe(true);
     });
 
     test('returns valid=true when all roles exist (logs PASS)', async () => {
       keycloakApi.verifyRoleExists.mockResolvedValue(true);
-      const result = await validateRoles(TOKEN, REALM, {
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, {
         roles: { realm: [{ name: 'admin' }] },
       });
       expect(result.valid).toBe(true);
@@ -453,7 +455,7 @@ describe('config-validation', () => {
 
     test('returns valid=true even when a role is missing (logs WARN, non-critical)', async () => {
       keycloakApi.verifyRoleExists.mockResolvedValue(false);
-      const result = await validateRoles(TOKEN, REALM, {
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, {
         roles: { realm: [{ name: 'missing-role' }] },
       });
       expect(result.valid).toBe(true);
@@ -461,7 +463,7 @@ describe('config-validation', () => {
 
     test('returns valid=true even when error is thrown (non-critical)', async () => {
       keycloakApi.verifyRoleExists.mockRejectedValue(new Error('api fail'));
-      const result = await validateRoles(TOKEN, REALM, {
+      const result = await validateRoles(TOKEN, KEYCLOAK_URL, REALM, {
         roles: { realm: [{ name: 'role1' }] },
       });
       expect(result.valid).toBe(true);

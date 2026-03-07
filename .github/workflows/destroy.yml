@@ -26,7 +26,7 @@ env:
 jobs:
   destroy-infrastructure:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,4 +52,11 @@ jobs:
         run: npm run build
       - name: Destroy CDK infrastructure
         working-directory: cdk
-        run: cdk destroy --all --force
+        run: |
+          set +e
+          cdk destroy --all --force
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::CDK destroy failed with exit code $EXIT_CODE"
+            exit 1
+          fi

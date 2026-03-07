@@ -10,7 +10,6 @@
  * the running Keycloak server.
  */
 
-import config = require('./config');
 import keycloakApi = require('./keycloak-api');
 import {
   FullValidationResult,
@@ -27,6 +26,7 @@ import utils = require('./utils');
  */
 async function performValidation(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<FullValidationResult> {
@@ -45,7 +45,7 @@ async function performValidation(
     console.log('=== Starting Configuration Validation ===');
 
     // Validate realm configuration
-    const realmValidation = await validateRealm(accessToken, realmName, realmConfig);
+    const realmValidation = await validateRealm(accessToken, keycloakUrl, realmName, realmConfig);
     results.details.realmValid = realmValidation.valid;
     if (!realmValidation.valid) {
       results.allValid = false;
@@ -54,7 +54,12 @@ async function performValidation(
     }
 
     // Validate clients
-    const clientsValidation = await validateClients(accessToken, realmName, realmConfig);
+    const clientsValidation = await validateClients(
+      accessToken,
+      keycloakUrl,
+      realmName,
+      realmConfig,
+    );
     results.details.clientsValid = clientsValidation.valid;
     if (!clientsValidation.valid) {
       results.allValid = false;
@@ -63,7 +68,7 @@ async function performValidation(
     }
 
     // Validate users
-    const usersValidation = await validateUsers(accessToken, realmName, realmConfig);
+    const usersValidation = await validateUsers(accessToken, keycloakUrl, realmName, realmConfig);
     results.details.usersValid = usersValidation.valid;
     if (!usersValidation.valid) {
       results.allValid = false;
@@ -72,9 +77,8 @@ async function performValidation(
     }
 
     // Validate roles (optional)
-    const rolesValidation = await validateRoles(accessToken, realmName, realmConfig);
+    const rolesValidation = await validateRoles(accessToken, keycloakUrl, realmName, realmConfig);
     results.details.rolesValid = rolesValidation.valid;
-    // Note: Roles are not critical, so we don't fail on role validation failure
 
     console.log('=== Validation Completed Successfully ===');
     return results;
@@ -92,13 +96,14 @@ async function performValidation(
  */
 async function validateRealm(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<ValidationResult> {
   try {
     console.log(`Validating realm "${realmName}" configuration...`);
 
-    const realmUrl = `${utils.getAdminApiUrl(config.KEYCLOAK_URL)}/realms/${encodeURIComponent(realmName)}`;
+    const realmUrl = `${utils.getAdminApiUrl(keycloakUrl)}/realms/${encodeURIComponent(realmName)}`;
     const realmResponse = await utils.makeAuthenticatedRequest('get', realmUrl, null, accessToken);
 
     if (realmResponse.status !== 200) {
@@ -137,6 +142,7 @@ async function validateRealm(
  */
 async function validateClients(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<ValidationResult> {
@@ -149,7 +155,12 @@ async function validateClients(
     console.log(`Validating ${realmConfig.clients.length} client(s)...`);
 
     for (const expectedClient of realmConfig.clients) {
-      const clientValidation = await validateSingleClient(accessToken, realmName, expectedClient);
+      const clientValidation = await validateSingleClient(
+        accessToken,
+        keycloakUrl,
+        realmName,
+        expectedClient,
+      );
       if (!clientValidation.valid) {
         return clientValidation;
       }
@@ -172,6 +183,7 @@ async function validateClients(
  */
 async function validateSingleClient(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   expectedClient: KeycloakClientConfig,
 ): Promise<ValidationResult> {
@@ -180,6 +192,7 @@ async function validateSingleClient(
 
     const actualClient = await keycloakApi.getClientByClientId(
       accessToken,
+      keycloakUrl,
       realmName,
       expectedClient.clientId,
     );
@@ -191,7 +204,6 @@ async function validateSingleClient(
       };
     }
 
-    // Validate critical client properties
     const criticalProps = [
       'publicClient',
       'standardFlowEnabled',
@@ -209,7 +221,6 @@ async function validateSingleClient(
       }
     }
 
-    // Validate redirect URIs (they should be processed from placeholders)
     if (expectedClient.redirectUris) {
       const redirectValidation = validateClientUriList(
         expectedClient,
@@ -222,7 +233,6 @@ async function validateSingleClient(
       }
     }
 
-    // Validate web origins
     if (expectedClient.webOrigins) {
       const originsValidation = validateClientUriList(
         expectedClient,
@@ -285,6 +295,7 @@ function validateClientUriList(
  */
 async function validateUsers(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<ValidationResult> {
@@ -297,7 +308,12 @@ async function validateUsers(
     console.log(`Validating ${realmConfig.users.length} user(s)...`);
 
     for (const expectedUser of realmConfig.users) {
-      const userValidation = await validateSingleUser(accessToken, realmName, expectedUser);
+      const userValidation = await validateSingleUser(
+        accessToken,
+        keycloakUrl,
+        realmName,
+        expectedUser,
+      );
       if (!userValidation.valid) {
         return userValidation;
       }
@@ -320,6 +336,7 @@ async function validateUsers(
  */
 async function validateSingleUser(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   expectedUser: KeycloakUserConfig,
 ): Promise<ValidationResult> {
@@ -328,6 +345,7 @@ async function validateSingleUser(
 
     const actualUser = await keycloakApi.getUserByUsername(
       accessToken,
+      keycloakUrl,
       realmName,
       expectedUser.username,
     );
@@ -339,7 +357,6 @@ async function validateSingleUser(
       };
     }
 
-    // Validate user properties
     if (expectedUser.enabled !== undefined && actualUser.enabled !== expectedUser.enabled) {
       return {
         valid: false,
@@ -378,6 +395,7 @@ async function validateSingleUser(
  */
 async function validateRoles(
   accessToken: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<ValidationResult> {
@@ -392,11 +410,11 @@ async function validateRoles(
     for (const expectedRole of realmConfig.roles.realm) {
       const roleExists = await keycloakApi.verifyRoleExists(
         accessToken,
+        keycloakUrl,
         realmName,
         expectedRole.name,
       );
       if (!roleExists) {
-        // Roles are not critical, so we'll just log but not fail
         console.warn(`  [WARN] Role "${expectedRole.name}" validation failed - role not found`);
       } else {
         console.log(`  [PASS] Role "${expectedRole.name}" validation passed`);
@@ -407,7 +425,6 @@ async function validateRoles(
     return { valid: true };
   } catch (error) {
     console.error('Roles validation error:', error);
-    // Roles are optional, so we don't fail on role validation errors
     console.log('[PASS] Roles validation completed with errors (non-critical)');
     return { valid: true };
   }

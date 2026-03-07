@@ -9,16 +9,16 @@ import config = require('./config');
 import utils = require('./utils');
 
 /** Basic health check for Keycloak server */
-async function isKeycloakHealthy(): Promise<boolean> {
+async function isKeycloakHealthy(keycloakUrl: string): Promise<boolean> {
   try {
-    const healthUrl = utils.getHealthCheckUrl(config.KEYCLOAK_URL);
+    const healthUrl = utils.getHealthCheckUrl(keycloakUrl);
     console.log(`Checking Keycloak health at: ${healthUrl}`);
 
     const response = await axios.get(healthUrl, {
       timeout: config.API_TIMEOUT_MS,
       validateStatus: null,
       // For HTTPS, we might need to handle certificate issues during startup
-      httpsAgent: utils.createHttpsAgent(),
+      httpsAgent: utils.createHttpsAgent(keycloakUrl),
     });
 
     // Keycloak root path typically returns 200 with HTML content or a redirect
@@ -38,16 +38,16 @@ async function isKeycloakHealthy(): Promise<boolean> {
 }
 
 /** Check if Keycloak API is ready for configuration */
-async function isKeycloakReadyForConfig(): Promise<boolean> {
+async function isKeycloakReadyForConfig(keycloakUrl: string): Promise<boolean> {
   try {
     // First, check basic health
-    if (!(await isKeycloakHealthy())) {
+    if (!(await isKeycloakHealthy(keycloakUrl))) {
       return false;
     }
 
     // Try to get the Keycloak server info which requires a fully operational server
     // This is a more comprehensive readiness check
-    const adminUrl = `${utils.getAdminApiUrl(config.KEYCLOAK_URL)}/serverinfo`;
+    const adminUrl = `${utils.getAdminApiUrl(keycloakUrl)}/serverinfo`;
     console.log(`Checking Keycloak server info at: ${adminUrl}`);
 
     const response = await axios.get(adminUrl, {
@@ -73,7 +73,7 @@ async function isKeycloakReadyForConfig(): Promise<boolean> {
 }
 
 /** Wait for Keycloak to be ready, with configurable retries */
-async function waitForKeycloakHealth(): Promise<boolean> {
+async function waitForKeycloakHealth(keycloakUrl: string): Promise<boolean> {
   const maxAttempts = config.HEALTH_CHECK_MAX_ATTEMPTS;
   const intervalMs = config.HEALTH_CHECK_INTERVAL_MS;
 
@@ -84,7 +84,7 @@ async function waitForKeycloakHealth(): Promise<boolean> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`Health check attempt ${attempt}/${maxAttempts}...`);
 
-    if (await isKeycloakReadyForConfig()) {
+    if (await isKeycloakReadyForConfig(keycloakUrl)) {
       console.log(`Keycloak is ready after ${attempt} attempts`);
       return true;
     }

@@ -18,9 +18,8 @@ export interface ConfigMock extends AppConfig {
 
 export function createConfigMock(overrides: Partial<ConfigMock> = {}): ConfigMock {
   return {
-    KEYCLOAK_URL: 'https://keycloak.example.com',
+    SSM_PREFIX: '/test-project/auth',
     KEYCLOAK_ADMIN_USERNAME: 'keycloak',
-    KEYCLOAK_ADMIN_SECRET_ARN: 'arn:aws:secretsmanager:us-west-2:123456789012:secret:admin',
     WEBSITE_URI: 'https://myapp.example.com',
     AUTH_CONFIG: '{}',
     USER_PASSWORD_SECRETS: '{}',
@@ -75,6 +74,7 @@ export function createKeycloakApiMock(overrides: Record<string, unknown> = {}) {
 
 export function createAwsUtilsMock(overrides: Record<string, unknown> = {}) {
   return {
+    getSSMParameter: jest.fn(),
     getAdminCredentials: jest.fn(),
     getOrCreateUserPassword: jest.fn(),
     ...overrides,

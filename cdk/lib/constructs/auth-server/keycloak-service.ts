@@ -22,13 +22,13 @@ import {
   SslPolicy,
   TargetType,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import { IRole } from 'aws-cdk-lib/aws-iam';
+import { Effect, IRole, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
-import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { OSMLAccount } from '../types';
@@ -41,18 +41,16 @@ export interface KeycloakServiceProps {
   projectName?: string;
   /** The VPC to deploy the service into. */
   vpc: IVpc;
-  /** The database host endpoint. */
-  databaseHost: string;
-  /** The database port. */
-  databasePort?: number;
-  /** The database credentials secret. */
+  /** The database credentials secret (used only for ECS Secrets Manager injection of KC_DB_PASSWORD). */
   databaseSecret: ISecret;
   /** The Keycloak admin credentials secret. */
   keycloakSecret: ISecret;
   /** The Keycloak admin username. */
   keycloakAdminUsername?: string;
-  /** The Keycloak container image. */
+  /** The Keycloak base image (used as Dockerfile build ARG when wrapperImage is not set). */
   keycloakImage?: string;
+  /** Pre-built wrapper image URI. When set, skips Docker build and uses fromRegistry. */
+  wrapperImage?: string;
   /** The task CPU units. */
   taskCpu?: number;
   /** The task memory in MiB. */
@@ -75,6 +73,8 @@ export interface KeycloakServiceProps {
   existingTaskRole?: IRole;
   /** Optional existing ECS execution role. */
   existingExecutionRole?: IRole;
+  /** SSM prefix for reading database params. Defaults to /{projectName}/auth. */
+  ssmPrefix?: string;
 }
 
 /**
@@ -181,12 +181,10 @@ export class KeycloakService extends Construct {
         : `http://${props.hostname}`
       : `http://${this.loadBalancer.loadBalancerDnsName}`;
 
-    const databasePort = props.databasePort ?? 3306;
+    const ssmPrefix = props.ssmPrefix ?? `/${projectName}/auth`;
     const environmentVars: { [key: string]: string } = {
       KC_DB: 'mysql',
       KC_DB_URL_DATABASE: 'keycloak',
-      KC_DB_URL_HOST: props.databaseHost,
-      KC_DB_URL_PORT: String(databasePort),
       KC_DB_USERNAME: 'admin',
       KC_HOSTNAME: keycloakHostname,
       KC_HOSTNAME_URL: this.keycloakUrl,
@@ -197,29 +195,22 @@ export class KeycloakService extends Construct {
       KC_HTTP_ENABLED: 'true',
       JAVA_OPTS: javaOpts,
       _JAVA_OPTIONS: '-Djdk.net.preferIPv4Stack=true -Djdk.net.preferIPv4Addresses=true',
+      SSM_PREFIX: ssmPrefix,
+      AWS_REGION: Stack.of(this).region,
     };
 
-    // Read Infinispan XML template from file, escape for shell embedding.
-    // Escape $ so ${env.*} in XML are written literally (Infinispan resolves them at runtime).
-    const infinispanXml = readFileSync(join(__dirname, 'cache-ispn-jdbc-ping.xml'), 'utf8')
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\$/g, '\\$')
-      .replace(/\n/g, ' ');
-
-    let entrypointScript = 'touch cache-ispn-jdbc-ping.xml && ';
-
-    entrypointScript += `echo "${infinispanXml}" > cache-ispn-jdbc-ping.xml && `;
-
-    entrypointScript +=
-      'cp cache-ispn-jdbc-ping.xml /opt/keycloak/conf/cache-ispn-jdbc-ping.xml && ';
-
-    entrypointScript += 'echo "Keycloak will be configured by Lambda after startup" && ';
-
-    const startFlags = isProd ? '' : ' --debug';
-    entrypointScript += `/opt/keycloak/bin/kc.sh build && /opt/keycloak/bin/kc.sh start${startFlags}`;
-
-    const keycloakEntrypoint = ['sh', '-c', entrypointScript];
+    // Configurable image sourcing: pre-built registry image or local Docker build
+    // __dirname is cdk/lib/constructs/auth-server/
+    // We need to go up 4 levels to reach lib/amazon-mission-solutions-auth-server/
+    const repoRoot = join(__dirname, '..', '..', '..', '..');
+    const containerImage = props.wrapperImage
+      ? ContainerImage.fromRegistry(props.wrapperImage)
+      : ContainerImage.fromAsset(repoRoot, {
+          file: 'docker/Dockerfile',
+          buildArgs: {
+            KEYCLOAK_VERSION: keycloakImage.split(':').pop() ?? 'latest',
+          },
+        });
 
     const taskDef = new FargateTaskDefinition(this, 'TaskDef', {
       cpu: taskCpu,
@@ -230,8 +221,7 @@ export class KeycloakService extends Construct {
     });
 
     const container = taskDef.addContainer('keycloak', {
-      image: ContainerImage.fromRegistry(keycloakImage),
-      entryPoint: keycloakEntrypoint,
+      image: containerImage,
       containerName: `${projectName}-auth-service`,
       environment: environmentVars,
       secrets: {
@@ -243,7 +233,6 @@ export class KeycloakService extends Construct {
         streamPrefix: 'keycloak',
         logGroup: logGroup,
       }),
-      workingDirectory: '/opt/keycloak',
     });
 
     container.addPortMappings(
@@ -330,6 +319,29 @@ export class KeycloakService extends Construct {
       policyName: `${projectName}-auth-cpu-scaling`,
     });
 
+    // Write Keycloak SSM parameters for downstream discovery
+    this.writeSSMParameters(projectName, this.keycloakUrl, props.keycloakSecret.secretArn);
+
+    // Grant ECS task role ssm:GetParameter scoped to database prefix
+    this.ecsRoles.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [
+          `arn:${Stack.of(this).partition}:ssm:${Stack.of(this).region}:${Stack.of(this).account}:parameter/${projectName}/auth/database/*`,
+        ],
+      }),
+    );
+
+    // Grant ECS task role rds:DescribeDBClusters for entrypoint DB readiness check
+    this.ecsRoles.taskRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['rds:DescribeDBClusters'],
+        resources: ['*'],
+      }),
+    );
+
     // CDK-NAG suppressions
     NagSuppressions.addResourceSuppressions(taskDef, [
       {
@@ -369,8 +381,60 @@ export class KeycloakService extends Construct {
             'ECS Exec (enableExecuteCommand) requires KMS Decrypt with wildcard resource for SSM session encryption. This is a CDK-managed default policy.',
           appliesTo: ['Resource::*'],
         },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'SSM GetParameter uses a wildcard suffix on the database parameter prefix (/{projectName}/auth/database/*) to allow reading all database connection parameters. This is scoped to the minimum required prefix.',
+          appliesTo: [
+            {
+              regex: '/^Resource::arn:.*:ssm:.*:parameter/.*/auth/database/\\*$/g',
+            },
+          ],
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'rds:DescribeDBClusters is a read-only describe operation used by the container entrypoint to check database readiness before starting Keycloak. RDS does not support resource-level permissions for this action.',
+          appliesTo: ['Resource::*'],
+        },
       ],
       true,
     );
+
+    NagSuppressions.addResourceSuppressions(
+      this.ecsRoles.executionRole,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'The execution role DefaultPolicy is created by CDK when ContainerImage.fromAsset grants ECR push/pull permissions and Secrets Manager grants read access. These wildcards are CDK-managed.',
+          appliesTo: ['Resource::*'],
+        },
+      ],
+      true,
+    );
+  }
+
+  /**
+   * Write Keycloak connection details to SSM Parameter Store for downstream discovery.
+   */
+  private writeSSMParameters(
+    projectName: string,
+    keycloakUrl: string,
+    adminSecretArn: string,
+  ): void {
+    const prefix = `/${projectName}/auth/keycloak`;
+
+    new StringParameter(this, 'UrlParam', {
+      parameterName: `${prefix}/url`,
+      stringValue: keycloakUrl,
+      description: `Keycloak URL for ${projectName} auth server`,
+    });
+
+    new StringParameter(this, 'AdminSecretArnParam', {
+      parameterName: `${prefix}/admin-secret-arn`,
+      stringValue: adminSecretArn,
+      description: `Keycloak admin secret ARN for ${projectName} auth server`,
+    });
   }
 }

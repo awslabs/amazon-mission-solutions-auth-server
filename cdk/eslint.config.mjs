@@ -61,7 +61,15 @@ const tsPlugins = {
 export default [
   // Global ignores
   {
-    ignores: ['node_modules/**', 'cdk.out/**', 'dist/**', 'coverage/**'],
+    ignores: [
+      'node_modules/**',
+      'cdk.out/**',
+      'dist/**',
+      'coverage/**',
+      '**/*.d.ts',
+      'lambda/**/.bundle/**',
+      'lambda/**/dist/**',
+    ],
   },
 
   js.configs.recommended,

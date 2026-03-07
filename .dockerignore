@@ -1,0 +1,6 @@
+# Ignore everything
+*
+
+# Allow only what the Docker build needs
+!/docker
+!/cdk/lib/constructs/auth-server/cache-ispn-jdbc-ping.xml

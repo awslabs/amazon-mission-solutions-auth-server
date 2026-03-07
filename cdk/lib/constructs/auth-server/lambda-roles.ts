@@ -24,7 +24,7 @@ export interface LambdaRolesProps {
   readonly account: OSMLAccount;
   /** The name for the config Lambda role. */
   readonly configLambdaRoleName: string;
-  /** The name for the provider Lambda role. */
+  /** The name for the provider role. */
   readonly providerRoleName: string;
   /** Optional existing config Lambda role to use instead of creating one. */
   readonly existingConfigLambdaRole?: IRole;
@@ -35,15 +35,13 @@ export interface LambdaRolesProps {
 /**
  * Construct that manages Lambda roles for the Auth Server.
  *
- * This construct creates roles for:
- * - Keycloak Config Lambda: Configures Keycloak with realms, clients, and users
- * - Provider Lambda: CloudFormation custom resource provider
+ * This construct creates the roles for the Keycloak Config Lambda and Provider.
  */
 export class LambdaRoles extends Construct {
   /** The Keycloak config Lambda role. */
   public readonly configLambdaRole: IRole;
 
-  /** The CloudFormation provider Lambda role. */
+  /** The Provider role. */
   public readonly providerRole: IRole;
 
   /** The AWS partition in which the roles will operate. */
@@ -121,7 +119,7 @@ export class LambdaRoles extends Construct {
   }
 
   /**
-   * Creates the CloudFormation provider Lambda role.
+   * Creates the Provider role for the Custom Resource.
    *
    * @param props - The Lambda roles properties
    * @returns The created provider role
@@ -130,9 +128,44 @@ export class LambdaRoles extends Construct {
     const role = new Role(this, 'ProviderRole', {
       roleName: props.providerRoleName,
       assumedBy: new ServicePrincipal('lambda.amazonaws.com'),
-      description:
-        'Allows the Auth Server CloudFormation Provider Lambda to invoke the config Lambda',
+      description: 'Allows the Auth Server Custom Resource Provider to invoke the config Lambda',
     });
+
+    const policy = new ManagedPolicy(this, 'ProviderPolicy', {
+      managedPolicyName: `${props.providerRoleName}-policy`,
+    });
+
+    // VPC permissions for Provider Lambda
+    const vpcPolicyStatement = new PolicyStatement({
+      sid: 'VPCNetworkInterface',
+      effect: Effect.ALLOW,
+      actions: [
+        'ec2:CreateNetworkInterface',
+        'ec2:DescribeNetworkInterfaces',
+        'ec2:DeleteNetworkInterface',
+        'ec2:AssignPrivateIpAddresses',
+        'ec2:UnassignPrivateIpAddresses',
+      ],
+      resources: ['*'],
+    });
+
+    policy.addStatements(vpcPolicyStatement);
+
+    role.addManagedPolicy(policy);
+
+    // Add NAG suppressions
+    NagSuppressions.addResourceSuppressions(
+      policy,
+      [
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
+          appliesTo: ['Resource::*'],
+        },
+      ],
+      true,
+    );
 
     return role;
   }
