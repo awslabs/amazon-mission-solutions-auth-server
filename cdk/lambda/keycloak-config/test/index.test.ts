@@ -20,6 +20,25 @@ const configValidation = require('../src/config-validation');
 
 const { handler } = require('../index');
 
+import { CloudFormationCustomResourceEvent } from '../src/types';
+
+/** Create a minimal valid CloudFormation Custom Resource event for testing. */
+function createCfnEvent(
+  overrides: Partial<CloudFormationCustomResourceEvent> = {},
+): CloudFormationCustomResourceEvent {
+  return {
+    RequestType: 'Create',
+    ServiceToken: 'arn:aws:lambda:us-east-1:123456789012:function:test',
+    ResponseURL: 'https://cloudformation-custom-resource-response-useast1.s3.amazonaws.com/test',
+    StackId: 'arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/guid',
+    RequestId: 'unique-id-1234',
+    ResourceType: 'Custom::KeycloakConfig',
+    LogicalResourceId: 'KeycloakConfig',
+    ResourceProperties: {},
+    ...overrides,
+  };
+}
+
 /**
  * Configure all mocks for a full successful run (happy path).
  * Individual tests override specific mocks to trigger error paths.
@@ -32,6 +51,14 @@ function setupHappyPath() {
     users: [{ username: 'my-user' }],
     roles: { realm: [{ name: 'my-role' }] },
   };
+
+  // SSM parameter reads
+  awsUtils.getSSMParameter.mockImplementation((name: string) => {
+    if (name.endsWith('/keycloak/url')) return Promise.resolve('https://auth.example.com');
+    if (name.endsWith('/keycloak/admin-secret-arn'))
+      return Promise.resolve('arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-secret');
+    return Promise.reject(new Error(`Unknown SSM parameter: ${name}`));
+  });
 
   healthCheck.waitForKeycloakHealth.mockResolvedValue(true);
   awsUtils.getAdminCredentials.mockResolvedValue({
@@ -70,65 +97,47 @@ function setupHappyPath() {
   return authConfig;
 }
 
-describe('index handler', () => {
+describe('index handler (CloudFormation Custom Resource)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('DELETE event', () => {
-    test('returns SUCCESS immediately without configuring Keycloak', async () => {
-      const event = {
-        RequestType: 'Delete',
-        PhysicalResourceId: 'existing-id',
-      };
-      const result = await handler(event);
-      expect(result.Status).toBe('SUCCESS');
-      expect(result.PhysicalResourceId).toBe('existing-id');
-      expect(healthCheck.waitForKeycloakHealth).not.toHaveBeenCalled();
-    });
-
-    test('uses event.PhysicalResourceId when provided', async () => {
-      const event = {
-        RequestType: 'Delete',
-        PhysicalResourceId: 'my-resource-id',
-      };
-      const result = await handler(event);
-      expect(result.PhysicalResourceId).toBe('my-resource-id');
-    });
-
-    test('generates a PhysicalResourceId when not provided in event', async () => {
-      const event = { RequestType: 'Delete' };
-      const result = await handler(event);
-      expect(result.PhysicalResourceId).toMatch(/^KeycloakConfig-/);
-    });
-  });
-
-  describe('happy path (Create/Update)', () => {
-    test('completes full flow and returns SUCCESS with RealmName and VerificationResults', async () => {
+  describe('happy path', () => {
+    test('completes full flow and returns ProviderResponse on success', async () => {
       setupHappyPath();
-      const event = { RequestType: 'Create' };
-      const result = await handler(event);
+      const result = await handler(createCfnEvent());
+      expect(result).toBeDefined();
       expect(result.Status).toBe('SUCCESS');
-      expect(result.Data.RealmName).toBe('test-realm');
-      expect(result.Data.VerificationResults).toEqual({
-        realmCreated: true,
-        clientsCreated: true,
-        usersCreated: true,
-        rolesCreated: true,
-      });
+      expect(result.PhysicalResourceId).toBe('keycloak-config');
     });
 
-    test('calls waitForKeycloakHealth before any API calls', async () => {
+    test('reads SSM parameters before any API calls', async () => {
       setupHappyPath();
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
+      expect(awsUtils.getSSMParameter).toHaveBeenCalledWith('/test-project/auth/keycloak/url');
+      expect(awsUtils.getSSMParameter).toHaveBeenCalledWith(
+        '/test-project/auth/keycloak/admin-secret-arn',
+      );
+    });
+
+    test('calls waitForKeycloakHealth with URL from SSM', async () => {
+      setupHappyPath();
+      await handler(createCfnEvent());
       expect(healthCheck.waitForKeycloakHealth).toHaveBeenCalledTimes(1);
+      expect(healthCheck.waitForKeycloakHealth).toHaveBeenCalledWith('https://auth.example.com');
     });
 
-    test('calls getAdminCredentials and loginWithRetry', async () => {
+    test('calls getAdminCredentials with secret ARN from SSM and loginWithRetry', async () => {
       setupHappyPath();
-      await handler({ RequestType: 'Create' });
-      expect(awsUtils.getAdminCredentials).toHaveBeenCalledTimes(1);
-      expect(keycloakApi.loginWithRetry).toHaveBeenCalledWith('admin', 'admin-pw');
+      await handler(createCfnEvent());
+      expect(awsUtils.getAdminCredentials).toHaveBeenCalledWith(
+        'arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-secret',
+      );
+      expect(keycloakApi.loginWithRetry).toHaveBeenCalledWith(
+        'https://auth.example.com',
+        'admin',
+        'admin-pw',
+      );
     });
 
     test('creates realm, clients, users, roles in order', async () => {
@@ -149,13 +158,13 @@ describe('index handler', () => {
         callOrder.push('role');
       });
 
-      await handler({ RequestType: 'Update' });
+      await handler(createCfnEvent());
       expect(callOrder).toEqual(['realm', 'client', 'user', 'role']);
     });
 
     test('verifies each resource after creation', async () => {
       setupHappyPath();
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(keycloakApi.verifyClientExists).toHaveBeenCalled();
       expect(keycloakApi.verifyUserExists).toHaveBeenCalled();
       expect(keycloakApi.verifyRoleExists).toHaveBeenCalled();
@@ -163,18 +172,28 @@ describe('index handler', () => {
 
     test('calls performValidation at the end', async () => {
       setupHappyPath();
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(configValidation.performValidation).toHaveBeenCalledWith(
         'access-token',
+        'https://auth.example.com',
         'test-realm',
         expect.objectContaining({ realm: 'test-realm' }),
       );
     });
+  });
 
-    test('returns response with Data containing WebsiteUri', async () => {
+  describe('Delete event handling', () => {
+    test('returns success immediately for Delete events', async () => {
       setupHappyPath();
-      const result = await handler({ RequestType: 'Create' });
-      expect(result.Data.WebsiteUri).toBe('https://myapp.example.com');
+      const event = createCfnEvent({
+        RequestType: 'Delete',
+        PhysicalResourceId: 'keycloak-config',
+      });
+
+      const result = await handler(event);
+      expect(result.Status).toBe('SUCCESS');
+      expect(result.PhysicalResourceId).toBe('keycloak-config');
+      expect(healthCheck.waitForKeycloakHealth).not.toHaveBeenCalled();
     });
   });
 
@@ -183,23 +202,33 @@ describe('index handler', () => {
       setupHappyPath();
       config.getAuthConfig.mockReturnValue(null);
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow('Configuration failed');
+      await expect(handler(createCfnEvent())).rejects.toThrow(
+        'No authentication configuration available',
+      );
     });
 
     test('throws with descriptive message when loginWithRetry fails', async () => {
       setupHappyPath();
       keycloakApi.loginWithRetry.mockRejectedValue(new Error('auth failed'));
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
+      await expect(handler(createCfnEvent())).rejects.toThrow(
         'Unable to log in to Keycloak after maximum retries',
       );
+    });
+
+    test('throws when SSM parameter read fails', async () => {
+      setupHappyPath();
+      awsUtils.getSSMParameter.mockRejectedValue(new Error('SSM read failed'));
+
+      await expect(handler(createCfnEvent())).rejects.toThrow('SSM read failed');
+      expect(healthCheck.waitForKeycloakHealth).not.toHaveBeenCalled();
     });
   });
 
   describe('realm creation', () => {
     test('uses utils.retry wrapper for realm creation', async () => {
       setupHappyPath();
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(utils.retry).toHaveBeenCalledWith(expect.any(Function), 3, 2000, 5000);
     });
 
@@ -211,9 +240,7 @@ describe('index handler', () => {
       err.response = { status: 500, data: { error: 'internal' } };
       utils.retry.mockRejectedValue(err);
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Failed to create/verify realm',
-      );
+      await expect(handler(createCfnEvent())).rejects.toThrow('Failed to create/verify realm');
     });
   });
 
@@ -223,28 +250,26 @@ describe('index handler', () => {
       authConfig.clients = [{ clientId: 'c1' }, { clientId: 'c2' }];
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateClient).toHaveBeenCalledTimes(2);
       expect(keycloakApi.verifyClientExists).toHaveBeenCalledTimes(2);
     });
 
-    test('skips when no clients defined (sets clientsCreated=true)', async () => {
+    test('skips when no clients defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.clients = undefined;
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      const result = await handler({ RequestType: 'Create' });
+      const result = await handler(createCfnEvent());
+      expect(result.Status).toBe('SUCCESS');
       expect(keycloakApi.createOrUpdateClient).not.toHaveBeenCalled();
-      expect(result.Data.VerificationResults.clientsCreated).toBe(true);
     });
 
     test('throws when verifyClientExists returns false', async () => {
       setupHappyPath();
       keycloakApi.verifyClientExists.mockResolvedValue(false);
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Failed to create/verify clients',
-      );
+      await expect(handler(createCfnEvent())).rejects.toThrow('Failed to create/verify clients');
     });
   });
 
@@ -254,28 +279,25 @@ describe('index handler', () => {
       authConfig.users = [{ username: 'u1' }, { username: 'u2' }];
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u1');
       expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u2');
     });
 
-    test('skips when no users defined (sets usersCreated=true)', async () => {
+    test('skips when no users defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.users = undefined;
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      const result = await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateUser).not.toHaveBeenCalled();
-      expect(result.Data.VerificationResults.usersCreated).toBe(true);
     });
 
     test('throws when verifyUserExists returns false', async () => {
       setupHappyPath();
       keycloakApi.verifyUserExists.mockResolvedValue(false);
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Failed to create/verify users',
-      );
+      await expect(handler(createCfnEvent())).rejects.toThrow('Failed to create/verify users');
     });
   });
 
@@ -285,35 +307,36 @@ describe('index handler', () => {
       authConfig.roles = { realm: [{ name: 'r1' }, { name: 'r2' }] };
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateRole).toHaveBeenCalledTimes(2);
       expect(keycloakApi.verifyRoleExists).toHaveBeenCalledTimes(2);
     });
 
-    test('skips when no roles defined (sets rolesCreated=true)', async () => {
+    test('skips when no roles defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.roles = undefined;
       config.getAuthConfig.mockReturnValue(authConfig);
 
-      const result = await handler({ RequestType: 'Create' });
+      await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateRole).not.toHaveBeenCalled();
-      expect(result.Data.VerificationResults.rolesCreated).toBe(true);
     });
 
-    test('does NOT throw when role creation fails (non-critical, sets rolesCreated=false)', async () => {
+    test('does NOT throw when role creation fails (non-critical)', async () => {
       setupHappyPath();
       keycloakApi.createOrUpdateRole.mockRejectedValue(new Error('role fail'));
 
-      const result = await handler({ RequestType: 'Create' });
-      expect(result.Data.VerificationResults.rolesCreated).toBe(false);
+      // Handler should still succeed (roles are non-critical)
+      const result = await handler(createCfnEvent());
+      expect(result.Status).toBe('SUCCESS');
     });
 
-    test('throws when verifyRoleExists returns false', async () => {
+    test('continues when verifyRoleExists returns false (non-critical)', async () => {
       setupHappyPath();
       keycloakApi.verifyRoleExists.mockResolvedValue(false);
 
-      const result = await handler({ RequestType: 'Create' });
-      expect(result.Data.VerificationResults.rolesCreated).toBe(false);
+      // Handler should still succeed (roles are non-critical)
+      const result = await handler(createCfnEvent());
+      expect(result.Status).toBe('SUCCESS');
     });
   });
 
@@ -325,18 +348,14 @@ describe('index handler', () => {
         failureReason: 'realm mismatch',
       });
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Configuration validation failed',
-      );
+      await expect(handler(createCfnEvent())).rejects.toThrow('Configuration validation failed');
     });
 
     test('throws when performValidation itself throws', async () => {
       setupHappyPath();
       configValidation.performValidation.mockRejectedValue(new Error('validation boom'));
 
-      await expect(handler({ RequestType: 'Create' })).rejects.toThrow(
-        'Configuration validation failed',
-      );
+      await expect(handler(createCfnEvent())).rejects.toThrow('Configuration validation failed');
     });
   });
 });

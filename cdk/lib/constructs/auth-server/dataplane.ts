@@ -30,10 +30,19 @@ import { KeycloakService } from './keycloak-service';
  */
 export class DataplaneConfig extends BaseConfig {
   /**
-   * Keycloak container image to use.
+   * Keycloak container image to use as the base for the wrapper Dockerfile build.
+   * Only used when KEYCLOAK_WRAPPER_IMAGE is not set.
    * @default "quay.io/keycloak/keycloak:latest"
    */
   KEYCLOAK_IMAGE?: string;
+
+  /**
+   * Pre-built Keycloak wrapper image URI.
+   * When set, uses ContainerImage.fromRegistry() and skips Docker build.
+   * When not set, builds the wrapper image from the local Dockerfile.
+   * @default undefined (build from local Dockerfile)
+   */
+  KEYCLOAK_WRAPPER_IMAGE?: string;
 
   /**
    * Keycloak admin username.
@@ -372,12 +381,11 @@ export class Dataplane extends Construct {
       account: props.account,
       projectName: projectName,
       vpc: props.vpc,
-      databaseHost: this.database.databaseCluster.clusterEndpoint.hostname,
-      databasePort: databasePort,
       databaseSecret: this.database.databaseSecret,
       keycloakSecret: keycloakAdminSecret,
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
       keycloakImage: this.config.KEYCLOAK_IMAGE,
+      wrapperImage: this.config.KEYCLOAK_WRAPPER_IMAGE,
       taskCpu: this.config.ECS_TASK_CPU,
       taskMemory: this.config.ECS_TASK_MEMORY,
       minContainers: this.config.ECS_MIN_CONTAINERS,
@@ -396,11 +404,6 @@ export class Dataplane extends Construct {
       'Allow MySQL connections from Keycloak service',
     );
 
-    // Ensure ECS service waits for database writer instance to be available.
-    // We target the FargateService specifically (not the whole KeycloakService construct)
-    // to avoid a cyclic dependency with the security group ingress rule above.
-    this.keycloakService.service.node.addDependency(this.database.databaseCluster);
-
     // Conditionally create Keycloak config Lambda if KEYCLOAK_AUTH_CONFIG is provided
     if (this.config.KEYCLOAK_AUTH_CONFIG) {
       // Create security group for the config Lambda
@@ -410,8 +413,6 @@ export class Dataplane extends Construct {
         securityGroupName: `${projectName}-auth-config-lambda-sg`,
       });
 
-      const keycloakUrl = this.keycloakService.keycloakUrl;
-
       // Allow Lambda to reach the ALB on the appropriate port
       const albPort = hostname && certificateArn ? 443 : 80;
       this.keycloakService.loadBalancer.connections.allowFrom(
@@ -420,24 +421,20 @@ export class Dataplane extends Construct {
         'Allow config Lambda to reach Keycloak ALB',
       );
 
-      const websiteUri = this.keycloakService.keycloakUrl;
-
       this.configLambda = new KeycloakConfig(this, 'KeycloakConfig', {
         account: props.account,
         projectName: projectName,
-        keycloakUrl: keycloakUrl,
         keycloakAdminSecret: keycloakAdminSecret,
         vpc: props.vpc,
         securityGroup: configLambdaSecurityGroup,
         keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
         customAuthConfig: this.config.KEYCLOAK_AUTH_CONFIG,
         generateUserPasswords: true,
-        websiteUri: websiteUri,
+        websiteUri: this.keycloakService.keycloakUrl,
       });
 
-      // Add dependencies to ensure proper deployment order
-      this.configLambda.node.addDependency(this.keycloakService);
-      this.configLambda.node.addDependency(this.database);
+      // Scope dependency to the custom resource so the Lambda can destroy in parallel with the service
+      this.configLambda.customResource.node.addDependency(this.keycloakService);
     }
 
     // Create DNS A record if hosted zone is available

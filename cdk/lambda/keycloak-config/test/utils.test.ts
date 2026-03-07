@@ -148,22 +148,18 @@ describe('utils', () => {
   });
 
   describe('createHttpsAgent', () => {
-    test('returns HTTPS agent when KEYCLOAK_URL is https', () => {
-      const agent = createHttpsAgent();
+    test('returns HTTPS agent when keycloakUrl is https', () => {
+      const agent = createHttpsAgent('https://keycloak.example.com');
       expect(agent).not.toBeNull();
       expect(agent.keepAlive).toBe(true);
     });
 
-    test('returns null when KEYCLOAK_URL is http', () => {
-      // Override the config module's KEYCLOAK_URL for this test
-      const config = require('../src/config');
-      const originalUrl = config.KEYCLOAK_URL;
-      config.KEYCLOAK_URL = 'http://localhost:8080';
-      try {
-        expect(createHttpsAgent()).toBeNull();
-      } finally {
-        config.KEYCLOAK_URL = originalUrl;
-      }
+    test('returns null when keycloakUrl is http', () => {
+      expect(createHttpsAgent('http://localhost:8080')).toBeNull();
+    });
+
+    test('returns null when keycloakUrl is undefined', () => {
+      expect(createHttpsAgent()).toBeNull();
     });
   });
 

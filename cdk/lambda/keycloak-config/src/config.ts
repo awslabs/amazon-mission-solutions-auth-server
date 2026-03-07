@@ -23,9 +23,8 @@ function getEnvVar(
 
 // Configuration from environment variables
 const config = {
-  KEYCLOAK_URL: getEnvVar('KEYCLOAK_URL', null, true) as string,
+  SSM_PREFIX: getEnvVar('SSM_PREFIX', null, true) as string,
   KEYCLOAK_ADMIN_USERNAME: getEnvVar('KEYCLOAK_ADMIN_USERNAME', 'keycloak') as string,
-  KEYCLOAK_ADMIN_SECRET_ARN: getEnvVar('KEYCLOAK_ADMIN_SECRET_ARN', null, true) as string,
   WEBSITE_URI: getEnvVar('WEBSITE_URI', '*') as string,
   AUTH_CONFIG: getEnvVar('AUTH_CONFIG', '{}') as string,
   USER_PASSWORD_SECRETS: getEnvVar('USER_PASSWORD_SECRETS', '{}') as string,

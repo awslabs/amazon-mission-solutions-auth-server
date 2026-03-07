@@ -26,6 +26,10 @@ jobs:
     uses: ./.github/workflows/check-pending-workflow.yml
     secrets: inherit
 
+  cdk-checks:
+    uses: ./.github/workflows/cdk.yml
+    secrets: inherit
+
   get-aws-region:
     runs-on: ubuntu-latest
     outputs:
@@ -38,6 +42,7 @@ jobs:
   deploy:
     needs:
       - check
+      - cdk-checks
       - get-aws-region
     uses: ./.github/workflows/deploy.yml
     with:
@@ -54,7 +59,7 @@ jobs:
     secrets: inherit
 
   destroy:
-    if: always()
+    if: always() && needs.deploy.result != 'skipped'
     needs:
       - check
       - deploy

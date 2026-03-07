@@ -5,9 +5,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CustomResource, Duration, RemovalPolicy } from 'aws-cdk-lib';
+import { CustomResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { ISecurityGroup, IVpc, SubnetType } from 'aws-cdk-lib/aws-ec2';
-import { IRole } from 'aws-cdk-lib/aws-iam';
+import { Effect, IRole, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
@@ -24,14 +24,12 @@ export interface KeycloakConfigProps {
   account: OSMLAccount;
   /** The project name prefix for resource naming. */
   projectName?: string;
-  /** The Keycloak URL for API calls and healthchecks. */
-  keycloakUrl: string;
-  /** The Keycloak admin credentials secret. */
-  keycloakAdminSecret: ISecret;
   /** The VPC to deploy the Lambda into. */
   vpc: IVpc;
   /** The security group for the Lambda. */
   securityGroup: ISecurityGroup;
+  /** The Keycloak admin credentials secret (used only for IAM granting). */
+  keycloakAdminSecret: ISecret;
   /** The Keycloak admin username. */
   keycloakAdminUsername?: string;
   /** Custom auth configuration (from deployment.json dataplaneConfig.KEYCLOAK_AUTH_CONFIG). */
@@ -44,17 +42,20 @@ export interface KeycloakConfigProps {
   existingConfigLambdaRole?: IRole;
   /** Optional existing provider role. */
   existingProviderRole?: IRole;
+  /** SSM prefix for reading keycloak params. Defaults to /{projectName}/auth. */
+  ssmPrefix?: string;
 }
 
 /**
  * Keycloak Config construct for the Auth Server.
- * Creates a Lambda function that configures Keycloak with realms, clients, and users.
+ * Creates a Lambda function triggered by a CloudFormation Custom Resource
+ * to configure Keycloak with realms, clients, and users.
  */
 export class KeycloakConfig extends Construct {
   public readonly configFunction: Function;
-  public readonly customResource: CustomResource;
   public readonly userPasswordSecrets: Map<string, Secret> = new Map();
   public readonly lambdaRoles: LambdaRoles;
+  public readonly customResource: CustomResource;
 
   constructor(scope: Construct, id: string, props: KeycloakConfigProps) {
     super(scope, id);
@@ -64,6 +65,7 @@ export class KeycloakConfig extends Construct {
     const generateUserPasswords = props.generateUserPasswords !== false;
     const websiteUri = props.websiteUri ?? '*';
     const isProd = props.account.prodLike ?? false;
+    const ssmPrefix = props.ssmPrefix ?? `/${projectName}/auth`;
 
     // Create Lambda roles using the dedicated construct
     this.lambdaRoles = new LambdaRoles(this, 'Roles', {
@@ -131,8 +133,7 @@ export class KeycloakConfig extends Construct {
       timeout: Duration.minutes(15),
       memorySize: 256,
       environment: {
-        KEYCLOAK_URL: props.keycloakUrl,
-        KEYCLOAK_ADMIN_SECRET_ARN: props.keycloakAdminSecret.secretArn,
+        SSM_PREFIX: ssmPrefix,
         KEYCLOAK_ADMIN_USERNAME: keycloakAdminUsername,
         WEBSITE_URI: websiteUri,
         AUTH_CONFIG: authConfig ? JSON.stringify(authConfig) : '',
@@ -157,31 +158,38 @@ export class KeycloakConfig extends Construct {
       secret.grantWrite(this.lambdaRoles.configLambdaRole);
     });
 
-    const providerLogGroupName = `/aws/lambda/${projectName}-auth-provider`;
+    // Grant Lambda role ssm:GetParameter scoped to /{projectName}/auth/keycloak/*
+    const stack = Stack.of(this);
+    this.lambdaRoles.configLambdaRole.addToPrincipalPolicy(
+      new PolicyStatement({
+        sid: 'SSMGetKeycloakParams',
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [
+          `arn:${stack.partition}:ssm:${stack.region}:${stack.account}:parameter${ssmPrefix}/keycloak/*`,
+        ],
+      }),
+    );
+
+    // Create Provider log group
     const providerLogGroup = new LogGroup(this, 'ProviderLogGroup', {
       retention: RetentionDays.ONE_MONTH,
-      logGroupName: providerLogGroupName,
+      logGroupName: `/aws/lambda/${projectName}-auth-keycloak-config-provider`,
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
 
-    providerLogGroup.grantWrite(this.lambdaRoles.providerRole);
-
+    // Create Provider for the Custom Resource
     const provider = new Provider(this, 'Provider', {
       onEventHandler: this.configFunction,
       logGroup: providerLogGroup,
-      frameworkOnEventRole: this.lambdaRoles.providerRole,
+      role: this.lambdaRoles.providerRole,
     });
 
-    this.customResource = new CustomResource(this, 'Resource', {
+    // Create the Custom Resource
+    this.customResource = new CustomResource(this, 'CustomResource', {
       serviceToken: provider.serviceToken,
       resourceType: 'Custom::KeycloakConfig',
-      properties: {
-        timestamp: new Date().toISOString(),
-      },
-      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
-
-    this.customResource.node.addDependency(provider);
 
     // CDK-NAG suppressions
     this.userPasswordSecrets.forEach(secret => {
@@ -195,32 +203,42 @@ export class KeycloakConfig extends Construct {
     });
 
     NagSuppressions.addResourceSuppressions(
-      provider,
+      this.lambdaRoles.configLambdaRole,
       [
         {
-          id: 'AwsSolutions-L1',
+          id: 'AwsSolutions-IAM5',
           reason:
-            'The CDK Provider framework Lambda runtime is managed by the CDK framework and cannot be directly controlled.',
+            'SSM GetParameter uses a wildcard suffix on the keycloak parameter prefix (/{projectName}/auth/keycloak/*) to allow reading keycloak URL and admin secret ARN. This is scoped to the minimum required prefix.',
+          appliesTo: [
+            {
+              regex: '/^Resource::arn:.*:ssm:.*:parameter/.*/auth/keycloak/\\*$/g',
+            },
+          ],
         },
       ],
       true,
     );
 
-    // Suppress IAM5 on the provider role after the Provider construct has been created,
-    // because the Provider's grantInvoke creates a DefaultPolicy on the role with
-    // lambda:InvokeFunction on <FunctionArn>:* (version/alias wildcard).
+    // Provider framework NAG suppressions
+    NagSuppressions.addResourceSuppressions(
+      provider,
+      [
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'The Provider framework Lambda runtime is managed by CDK and may not use the latest runtime version.',
+        },
+      ],
+      true,
+    );
+
     NagSuppressions.addResourceSuppressions(
       this.lambdaRoles.providerRole,
       [
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'The CDK Provider framework grants lambda:InvokeFunction on the config function ARN with a version/alias wildcard suffix (:*). This is managed by the CDK framework.',
-          appliesTo: [
-            {
-              regex: '/^Resource::.*\\.Arn>:\\*$/g',
-            },
-          ],
+            'Provider role requires permissions to invoke the config Lambda and write logs. Wildcard is scoped to the provider log group.',
         },
       ],
       true,

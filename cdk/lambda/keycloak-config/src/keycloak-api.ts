@@ -3,7 +3,7 @@
  */
 
 /**
- * Keycloak API functions for the Keycloak Configuration Lambda
+ * Keycloak API functions for the Keycloak Configuration Lambda.
  */
 import axios from 'axios';
 
@@ -57,9 +57,9 @@ function getRolesUrl(baseUrl: string, realm: string): string {
 /**
  * Log in to Keycloak and get an access token
  */
-async function login(username: string, password: string): Promise<string> {
+async function login(keycloakUrl: string, username: string, password: string): Promise<string> {
   try {
-    const tokenUrl = getTokenUrl(config.KEYCLOAK_URL);
+    const tokenUrl = getTokenUrl(keycloakUrl);
     console.log(`Logging in to Keycloak at: ${tokenUrl}`);
 
     const data: Record<string, string> = {
@@ -92,9 +92,13 @@ async function login(username: string, password: string): Promise<string> {
 /**
  * Login with retry logic
  */
-async function loginWithRetry(username: string, password: string): Promise<string> {
+async function loginWithRetry(
+  keycloakUrl: string,
+  username: string,
+  password: string,
+): Promise<string> {
   return utils.retry(
-    () => login(username, password),
+    () => login(keycloakUrl, username, password),
     config.API_MAX_RETRIES,
     config.API_RETRY_INTERVAL_MS,
     config.API_RETRY_INTERVAL_MS * 2,
@@ -117,45 +121,38 @@ function replacePlaceholders(
  */
 async function createOrUpdateRealmWithConfig(
   token: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<void> {
-  // Declare outside try block to avoid reference errors in catch block
   let exists = false;
 
   try {
-    // First, check if the realm exists
-    exists = await verifyRealmExists(token, realmName);
+    exists = await verifyRealmExists(token, keycloakUrl, realmName);
 
-    // If realm already exists, update it
     if (exists) {
-      return await updateExistingRealm(token, realmName, realmConfig);
+      return await updateExistingRealm(token, keycloakUrl, realmName, realmConfig);
     }
 
-    // For new realm creation, create a minimal realm first, then add properties
     console.log(`Creating minimal realm: ${realmName}`);
 
-    // Create minimal realm configuration - just the required properties
     const minimalConfig = {
       realm: realmName,
       enabled: true,
       displayName: realmConfig.displayName || `${realmName} Realm`,
     };
 
-    // Important: Use the base admin URL
-    const adminUrl = utils.getAdminApiUrl(config.KEYCLOAK_URL);
+    const adminUrl = utils.getAdminApiUrl(keycloakUrl);
     const url = `${adminUrl}/realms`;
 
     console.log(`Request URL (minimal config): ${url}, Method: post`);
     console.log(`Minimal realm config: ${JSON.stringify(minimalConfig)}`);
 
-    // Create the realm with minimal configuration first
     const response = await utils.makeAuthenticatedRequest('post', url, minimalConfig, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully created minimal realm: ${realmName}`);
 
-      // If we have clients and users defined, we'll add them separately
       if (realmConfig.clients && realmConfig.clients.length > 0) {
         console.log(`Will add ${realmConfig.clients.length} client(s) separately`);
       }
@@ -178,23 +175,22 @@ async function createOrUpdateRealmWithConfig(
  */
 async function updateExistingRealm(
   token: string,
+  keycloakUrl: string,
   realmName: string,
   realmConfig: KeycloakRealmConfig,
 ): Promise<void> {
   try {
-    // Create the config object with defaults
     const baseConfig: Record<string, unknown> = {
       realm: realmName,
       enabled: true,
     };
 
-    // Merge with custom config - exclude clients and users which we'll handle separately
     const realmProperties = Object.fromEntries(
       Object.entries(realmConfig).filter(([key]) => key !== 'clients' && key !== 'users'),
     );
     const updateConfig = { ...baseConfig, ...realmProperties };
 
-    const adminUrl = utils.getAdminApiUrl(config.KEYCLOAK_URL);
+    const adminUrl = utils.getAdminApiUrl(keycloakUrl);
     const url = `${adminUrl}/realms/${realmName}`;
 
     console.log(`Updating realm: ${realmName}`);
@@ -219,33 +215,28 @@ async function updateExistingRealm(
  */
 async function createOrUpdateClient(
   token: string,
+  keycloakUrl: string,
   realm: string,
   clientConfig: KeycloakClientConfig,
 ): Promise<void> {
-  // Declare outside try block to avoid reference errors in catch block
   let clientExists = false;
 
   try {
     const clientId = clientConfig.clientId;
 
-    // Check if the client exists
-    const existingClient = await getClientByClientId(token, realm, clientId);
+    const existingClient = await getClientByClientId(token, keycloakUrl, realm, clientId);
     clientExists = !!existingClient;
 
-    const clientsUrl = getClientsUrl(config.KEYCLOAK_URL, realm);
+    const clientsUrl = getClientsUrl(keycloakUrl, realm);
     const method = clientExists ? ('put' as const) : ('post' as const);
     const url = clientExists ? `${clientsUrl}/${existingClient!.id}` : clientsUrl;
 
     console.log(`${clientExists ? 'Updating' : 'Creating'} client: ${clientId} in realm: ${realm}`);
 
-    // Create a clean client config, removing unsupported fields
-    // Extract fields that need special handling
     const { websiteUri, postLogoutRedirectUris, ...cleanClientConfig } = clientConfig;
 
-    // Initialize attributes if not present
     cleanClientConfig.attributes = cleanClientConfig.attributes || {};
 
-    // Handle postLogoutRedirectUris - in Keycloak these belong in attributes
     if (postLogoutRedirectUris && postLogoutRedirectUris.length > 0) {
       const processedUris = replacePlaceholders(
         postLogoutRedirectUris,
@@ -253,14 +244,12 @@ async function createOrUpdateClient(
         websiteUri ? `${websiteUri}/*` : null,
       );
 
-      // Store as string in attributes as per Keycloak format
       cleanClientConfig.attributes!['post.logout.redirect.uris'] = processedUris.join(',');
       console.log(
         `Processed postLogoutRedirectUris into attributes: ${cleanClientConfig.attributes!['post.logout.redirect.uris']}`,
       );
     }
 
-    // Handle placeholders in redirectUris
     if (cleanClientConfig.redirectUris) {
       cleanClientConfig.redirectUris = replacePlaceholders(
         cleanClientConfig.redirectUris,
@@ -270,7 +259,6 @@ async function createOrUpdateClient(
       console.log(`Processed redirectUris: ${JSON.stringify(cleanClientConfig.redirectUris)}`);
     }
 
-    // Handle placeholders in webOrigins
     if (cleanClientConfig.webOrigins) {
       cleanClientConfig.webOrigins = replacePlaceholders(
         cleanClientConfig.webOrigins,
@@ -280,7 +268,6 @@ async function createOrUpdateClient(
       console.log(`Processed webOrigins: ${JSON.stringify(cleanClientConfig.webOrigins)}`);
     }
 
-    // If updating, merge with existing client config and include ID
     const fullConfig = clientExists
       ? { ...existingClient, ...cleanClientConfig }
       : cleanClientConfig;
@@ -306,11 +293,12 @@ async function createOrUpdateClient(
  */
 async function getClientByClientId(
   token: string,
+  keycloakUrl: string,
   realm: string,
   clientId: string,
 ): Promise<KeycloakClientResponse | null> {
   try {
-    const clientsUrl = getClientsUrl(config.KEYCLOAK_URL, realm);
+    const clientsUrl = getClientsUrl(keycloakUrl, realm);
     console.log(`Getting client by clientId: ${clientId} in realm: ${realm}`);
 
     const url = `${clientsUrl}?clientId=${encodeURIComponent(clientId)}`;
@@ -338,61 +326,54 @@ async function getClientByClientId(
  */
 async function createOrUpdateUser(
   token: string,
+  keycloakUrl: string,
   realm: string,
   userConfig: KeycloakUserConfig,
   password: string,
 ): Promise<void> {
-  // Declare outside try block to avoid reference errors in catch block
   let userExists = false;
 
   try {
     const username = userConfig.username;
 
-    // Check if the user exists
-    const existingUser = await getUserByUsername(token, realm, username);
+    const existingUser = await getUserByUsername(token, keycloakUrl, realm, username);
     userExists = !!existingUser;
 
-    const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
+    const usersUrl = getUsersUrl(keycloakUrl, realm);
     const method = userExists ? ('put' as const) : ('post' as const);
     const url = userExists ? `${usersUrl}/${existingUser!.id}` : usersUrl;
 
     console.log(`${userExists ? 'Updating' : 'Creating'} user: ${username} in realm: ${realm}`);
 
-    // Create user object from config
     let userData: Record<string, unknown> = {
       username,
-      enabled: userConfig.enabled !== false, // Default to true
+      enabled: userConfig.enabled !== false,
       emailVerified: true,
     };
 
-    // Add optional fields if provided
     if (userConfig.email) userData.email = userConfig.email;
     if (userConfig.firstName) userData.firstName = userConfig.firstName;
     if (userConfig.lastName) userData.lastName = userConfig.lastName;
 
-    // If updating, merge with existing user data and include ID
     if (userExists) {
       userData = { ...existingUser, ...userData };
     }
 
-    // Create or update the user
     const response = await utils.makeAuthenticatedRequest(method, url, userData, token);
 
     if (response.status >= 200 && response.status < 300) {
       console.log(`Successfully ${userExists ? 'updated' : 'created'} user: ${username}`);
 
-      // Get user ID (either from existing user or by looking up the newly created user)
       let userId: string;
       if (userExists) {
         userId = existingUser!.id;
       } else {
-        const createdUser = await getUserByUsername(token, realm, username);
+        const createdUser = await getUserByUsername(token, keycloakUrl, realm, username);
         if (!createdUser) throw new Error(`Failed to retrieve user after creation: ${username}`);
         userId = createdUser.id;
       }
 
-      // Set the user's password
-      await setUserPassword(token, realm, userId, password);
+      await setUserPassword(token, keycloakUrl, realm, userId, password);
     } else {
       throw new Error(`Unexpected status code: ${response.status}`);
     }
@@ -408,11 +389,12 @@ async function createOrUpdateUser(
  */
 async function getUserByUsername(
   token: string,
+  keycloakUrl: string,
   realm: string,
   username: string,
 ): Promise<KeycloakUserResponse | null> {
   try {
-    const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
+    const usersUrl = getUsersUrl(keycloakUrl, realm);
     console.log(`Getting user by username: ${username} in realm: ${realm}`);
 
     const url = `${usersUrl}?username=${encodeURIComponent(username)}&exact=true`;
@@ -440,12 +422,13 @@ async function getUserByUsername(
  */
 async function setUserPassword(
   token: string,
+  keycloakUrl: string,
   realm: string,
   userId: string,
   password: string,
 ): Promise<void> {
   try {
-    const usersUrl = getUsersUrl(config.KEYCLOAK_URL, realm);
+    const usersUrl = getUsersUrl(keycloakUrl, realm);
     console.log(`Setting password for user ID: ${userId} in realm: ${realm}`);
 
     const url = `${usersUrl}/${userId}/reset-password`;
@@ -474,19 +457,18 @@ async function setUserPassword(
  */
 async function createOrUpdateRole(
   token: string,
+  keycloakUrl: string,
   realm: string,
   roleConfig: KeycloakRoleConfig,
 ): Promise<void> {
-  // Declare outside try block to avoid reference errors in catch block
   let roleExists = false;
 
   try {
     const roleName = roleConfig.name;
 
-    // Check if the role exists
-    roleExists = await verifyRoleExists(token, realm, roleName);
+    roleExists = await verifyRoleExists(token, keycloakUrl, realm, roleName);
 
-    const rolesUrl = getRolesUrl(config.KEYCLOAK_URL, realm);
+    const rolesUrl = getRolesUrl(keycloakUrl, realm);
     const method = roleExists ? ('put' as const) : ('post' as const);
     const url = roleExists ? `${rolesUrl}/${roleName}` : rolesUrl;
 
@@ -509,9 +491,13 @@ async function createOrUpdateRole(
 /**
  * Verify if a realm exists
  */
-async function verifyRealmExists(token: string, realm: string): Promise<boolean> {
+async function verifyRealmExists(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+): Promise<boolean> {
   try {
-    const url = getRealmUrl(config.KEYCLOAK_URL, realm);
+    const url = getRealmUrl(keycloakUrl, realm);
     console.log(`Verifying realm exists: ${realm}`);
 
     const response = await utils.makeAuthenticatedRequest('get', url, null, token);
@@ -531,11 +517,12 @@ async function verifyRealmExists(token: string, realm: string): Promise<boolean>
  */
 async function verifyClientExists(
   token: string,
+  keycloakUrl: string,
   realm: string,
   clientId: string,
 ): Promise<boolean> {
   try {
-    const client = await getClientByClientId(token, realm, clientId);
+    const client = await getClientByClientId(token, keycloakUrl, realm, clientId);
     return !!client;
   } catch (error) {
     const errorMessage = utils.formatError(error);
@@ -547,9 +534,14 @@ async function verifyClientExists(
 /**
  * Verify if a user exists
  */
-async function verifyUserExists(token: string, realm: string, username: string): Promise<boolean> {
+async function verifyUserExists(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  username: string,
+): Promise<boolean> {
   try {
-    const user = await getUserByUsername(token, realm, username);
+    const user = await getUserByUsername(token, keycloakUrl, realm, username);
     return !!user;
   } catch (error) {
     const errorMessage = utils.formatError(error);
@@ -561,9 +553,14 @@ async function verifyUserExists(token: string, realm: string, username: string):
 /**
  * Verify if a role exists
  */
-async function verifyRoleExists(token: string, realm: string, roleName: string): Promise<boolean> {
+async function verifyRoleExists(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  roleName: string,
+): Promise<boolean> {
   try {
-    const url = `${getRolesUrl(config.KEYCLOAK_URL, realm)}/${roleName}`;
+    const url = `${getRolesUrl(keycloakUrl, realm)}/${roleName}`;
     console.log(`Verifying role exists: ${roleName}`);
 
     const response = await utils.makeAuthenticatedRequest('get', url, null, token);
@@ -589,7 +586,6 @@ export = {
   verifyClientExists,
   verifyUserExists,
   verifyRoleExists,
-  // Export helper functions needed for validation and testing
   getClientByClientId,
   getUserByUsername,
   setUserPassword,

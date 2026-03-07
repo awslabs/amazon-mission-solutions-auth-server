@@ -33,6 +33,19 @@ jobs:
       - name: Run pre-commit hooks
         run: pre-commit run --from-ref origin/main --to-ref HEAD
 
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup CDK
+        uses: ./.github/actions/setup-cdk
+      - name: Build
+        working-directory: cdk
+        run: npm run build
+      - name: Test
+        working-directory: cdk
+        run: npm test
+
   security-scan:
     runs-on: ubuntu-latest
     needs: quality-checks

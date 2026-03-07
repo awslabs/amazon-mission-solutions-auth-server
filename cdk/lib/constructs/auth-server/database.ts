@@ -19,6 +19,7 @@ import {
   SecretRotationApplication,
   SecretTargetAttachment,
 } from 'aws-cdk-lib/aws-secretsmanager';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
@@ -166,5 +167,32 @@ export class Database extends Construct {
           'Deletion protection is conditionally enabled based on the prodLike flag. Non-prod environments intentionally disable it for easier teardown.',
       },
     ]);
+
+    this.writeSSMParameters(projectName);
+  }
+
+  /**
+   * Writes database connection details to SSM Parameter Store for runtime discovery.
+   */
+  private writeSSMParameters(projectName: string): void {
+    const prefix = `/${projectName}/auth/database`;
+
+    new StringParameter(this, 'EndpointParam', {
+      parameterName: `${prefix}/endpoint`,
+      stringValue: this.databaseCluster.clusterEndpoint.hostname,
+      description: `Database endpoint for ${projectName} auth server`,
+    });
+
+    new StringParameter(this, 'PortParam', {
+      parameterName: `${prefix}/port`,
+      stringValue: String(this.databaseCluster.clusterEndpoint.port),
+      description: `Database port for ${projectName} auth server`,
+    });
+
+    new StringParameter(this, 'SecretArnParam', {
+      parameterName: `${prefix}/secret-arn`,
+      stringValue: this.databaseSecret.secretArn,
+      description: `Database secret ARN for ${projectName} auth server`,
+    });
   }
 }

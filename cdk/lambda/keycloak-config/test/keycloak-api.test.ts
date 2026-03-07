@@ -2,6 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+export {};
 jest.mock('axios');
 jest.mock('../src/config', () => require('./mock-helpers').createConfigMock());
 jest.mock('../src/utils', () => require('./mock-helpers').createUtilsMock());
@@ -28,6 +29,7 @@ const {
 
 const TOKEN = 'test-access-token';
 const REALM = 'test-realm';
+const KEYCLOAK_URL = 'https://keycloak.example.com';
 
 describe('keycloak-api', () => {
   beforeEach(() => {
@@ -39,7 +41,7 @@ describe('keycloak-api', () => {
       axios.post.mockResolvedValue({
         data: { access_token: 'my-token' },
       });
-      const token = await login('admin', 'password');
+      const token = await login(KEYCLOAK_URL, 'admin', 'password');
       expect(token).toBe('my-token');
       expect(axios.post).toHaveBeenCalledWith(
         'https://keycloak.example.com/realms/master/protocol/openid-connect/token',
@@ -53,21 +55,21 @@ describe('keycloak-api', () => {
 
     test('throws when response has no access_token', async () => {
       axios.post.mockResolvedValue({ data: {} });
-      await expect(login('admin', 'password')).rejects.toThrow(
+      await expect(login(KEYCLOAK_URL, 'admin', 'password')).rejects.toThrow(
         'Received response without access token',
       );
     });
 
     test('throws on axios error', async () => {
       axios.post.mockRejectedValue(new Error('network error'));
-      await expect(login('admin', 'password')).rejects.toThrow('network error');
+      await expect(login(KEYCLOAK_URL, 'admin', 'password')).rejects.toThrow('network error');
     });
   });
 
   describe('loginWithRetry', () => {
     test('delegates to utils.retry with login function', async () => {
       axios.post.mockResolvedValue({ data: { access_token: 'retry-token' } });
-      const token = await loginWithRetry('admin', 'password');
+      const token = await loginWithRetry(KEYCLOAK_URL, 'admin', 'password');
       expect(utils.retry).toHaveBeenCalledWith(
         expect.any(Function),
         config.API_MAX_RETRIES,
@@ -81,7 +83,7 @@ describe('keycloak-api', () => {
   describe('verifyRealmExists', () => {
     test('returns true for 200 response', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200 });
-      const result = await verifyRealmExists(TOKEN, REALM);
+      const result = await verifyRealmExists(TOKEN, KEYCLOAK_URL, REALM);
       expect(result).toBe(true);
       expect(utils.makeAuthenticatedRequest).toHaveBeenCalledWith(
         'get',
@@ -93,13 +95,13 @@ describe('keycloak-api', () => {
 
     test('returns false for non-200 response (e.g. 404)', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 404 });
-      const result = await verifyRealmExists(TOKEN, REALM);
+      const result = await verifyRealmExists(TOKEN, KEYCLOAK_URL, REALM);
       expect(result).toBe(false);
     });
 
     test('throws on error', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(verifyRealmExists(TOKEN, REALM)).rejects.toThrow('server error');
+      await expect(verifyRealmExists(TOKEN, KEYCLOAK_URL, REALM)).rejects.toThrow('server error');
     });
   });
 
@@ -110,7 +112,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 }) // verifyRealmExists
         .mockResolvedValueOnce({ status: 201 }); // create realm
 
-      await createOrUpdateRealmWithConfig(TOKEN, REALM, {
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {
         displayName: 'Test Realm',
       });
 
@@ -128,7 +130,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200 }) // verifyRealmExists
         .mockResolvedValueOnce({ status: 204 }); // update realm (PUT)
 
-      await createOrUpdateRealmWithConfig(TOKEN, REALM, {
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {
         displayName: 'Updated Realm',
       });
 
@@ -141,7 +143,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateRealmWithConfig(TOKEN, REALM, {
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {
         displayName: 'Custom Display',
       });
 
@@ -154,7 +156,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateRealmWithConfig(TOKEN, REALM, {});
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {});
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(data.displayName).toBe(`${REALM} Realm`);
@@ -166,7 +168,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateRealmWithConfig(TOKEN, REALM, {
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {
         clients: [{ clientId: 'c1' }, { clientId: 'c2' }],
         users: [{ username: 'u1' }],
       });
@@ -180,7 +182,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 }) // verifyRealmExists
         .mockResolvedValueOnce({ status: 400 }); // create fails
 
-      await expect(createOrUpdateRealmWithConfig(TOKEN, REALM, {})).rejects.toThrow(
+      await expect(createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {})).rejects.toThrow(
         'Unexpected status code when creating realm: 400',
       );
     });
@@ -190,7 +192,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 }) // verifyRealmExists
         .mockRejectedValueOnce(new Error('network error'));
 
-      await expect(createOrUpdateRealmWithConfig(TOKEN, REALM, {})).rejects.toThrow(
+      await expect(createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {})).rejects.toThrow(
         'network error',
       );
     });
@@ -203,7 +205,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] }) // getClientByClientId
         .mockResolvedValueOnce({ status: 201 }); // create client
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         name: 'My Client',
       });
@@ -219,7 +221,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [existingClient] }) // getClientByClientId
         .mockResolvedValueOnce({ status: 204 }); // update client
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         name: 'Updated',
       });
@@ -234,7 +236,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         websiteUri: 'https://myapp.com',
         redirectUris: ['__PLACEHOLDER_REDIRECT_URI__', 'https://other.com/*'],
@@ -249,7 +251,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         websiteUri: 'https://myapp.com',
         webOrigins: ['__PLACEHOLDER_WEB_ORIGIN__'],
@@ -264,7 +266,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 201 });
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         websiteUri: 'https://myapp.com',
         postLogoutRedirectUris: ['__PLACEHOLDER_REDIRECT_URI__', 'https://other.com/logout'],
@@ -287,7 +289,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [existingClient] })
         .mockResolvedValueOnce({ status: 204 });
 
-      await createOrUpdateClient(TOKEN, REALM, {
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
         name: 'New Name',
       });
@@ -302,9 +304,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 400 });
 
-      await expect(createOrUpdateClient(TOKEN, REALM, { clientId: 'my-client' })).rejects.toThrow(
-        'Unexpected status code: 400',
-      );
+      await expect(
+        createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, { clientId: 'my-client' }),
+      ).rejects.toThrow('Unexpected status code: 400');
     });
 
     test('throws on request error', async () => {
@@ -312,9 +314,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockRejectedValueOnce(new Error('request failed'));
 
-      await expect(createOrUpdateClient(TOKEN, REALM, { clientId: 'my-client' })).rejects.toThrow(
-        'request failed',
-      );
+      await expect(
+        createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, { clientId: 'my-client' }),
+      ).rejects.toThrow('request failed');
     });
   });
 
@@ -322,19 +324,21 @@ describe('keycloak-api', () => {
     test('returns client when found', async () => {
       const client = { id: 'uuid-1', clientId: 'my-client' };
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [client] });
-      const result = await getClientByClientId(TOKEN, REALM, 'my-client');
+      const result = await getClientByClientId(TOKEN, KEYCLOAK_URL, REALM, 'my-client');
       expect(result).toEqual(client);
     });
 
     test('returns null when client not found (empty array)', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
-      const result = await getClientByClientId(TOKEN, REALM, 'missing');
+      const result = await getClientByClientId(TOKEN, KEYCLOAK_URL, REALM, 'missing');
       expect(result).toBeNull();
     });
 
     test('throws on errors', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(getClientByClientId(TOKEN, REALM, 'my-client')).rejects.toThrow('server error');
+      await expect(getClientByClientId(TOKEN, KEYCLOAK_URL, REALM, 'my-client')).rejects.toThrow(
+        'server error',
+      );
     });
   });
 
@@ -349,6 +353,7 @@ describe('keycloak-api', () => {
 
       await createOrUpdateUser(
         TOKEN,
+        KEYCLOAK_URL,
         REALM,
         {
           username: 'newuser',
@@ -375,7 +380,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [{ id: 'user-2', username: 'minimal' }] })
         .mockResolvedValueOnce({ status: 204 });
 
-      await createOrUpdateUser(TOKEN, REALM, { username: 'minimal' }, 'pw');
+      await createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'minimal' }, 'pw');
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(data.username).toBe('minimal');
@@ -392,6 +397,7 @@ describe('keycloak-api', () => {
 
       await createOrUpdateUser(
         TOKEN,
+        KEYCLOAK_URL,
         REALM,
         {
           username: 'testuser',
@@ -413,7 +419,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [{ id: 'user-new', username: 'u' }] })
         .mockResolvedValueOnce({ status: 204 });
 
-      await createOrUpdateUser(TOKEN, REALM, { username: 'u' }, 'pw');
+      await createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'u' }, 'pw');
 
       const [method, url, data] = utils.makeAuthenticatedRequest.mock.calls[3];
       expect(method).toBe('put');
@@ -428,7 +434,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 204 })
         .mockResolvedValueOnce({ status: 204 });
 
-      await createOrUpdateUser(TOKEN, REALM, { username: 'testuser' }, 'newpw');
+      await createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'testuser' }, 'newpw');
 
       const [, url] = utils.makeAuthenticatedRequest.mock.calls[2];
       expect(url).toContain('user-id/reset-password');
@@ -440,9 +446,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 201 }) // create user
         .mockResolvedValueOnce({ status: 200, data: [] }); // getUserByUsername returns empty
 
-      await expect(createOrUpdateUser(TOKEN, REALM, { username: 'ghost' }, 'pw')).rejects.toThrow(
-        'Failed to retrieve user after creation: ghost',
-      );
+      await expect(
+        createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'ghost' }, 'pw'),
+      ).rejects.toThrow('Failed to retrieve user after creation: ghost');
     });
 
     test('throws on non-2xx response', async () => {
@@ -450,9 +456,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 400 });
 
-      await expect(createOrUpdateUser(TOKEN, REALM, { username: 'bad' }, 'pw')).rejects.toThrow(
-        'Unexpected status code: 400',
-      );
+      await expect(
+        createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'bad' }, 'pw'),
+      ).rejects.toThrow('Unexpected status code: 400');
     });
 
     test('defaults enabled to true when not specified', async () => {
@@ -462,7 +468,7 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200, data: [{ id: 'u1', username: 'x' }] })
         .mockResolvedValueOnce({ status: 204 });
 
-      await createOrUpdateUser(TOKEN, REALM, { username: 'x' }, 'pw');
+      await createOrUpdateUser(TOKEN, KEYCLOAK_URL, REALM, { username: 'x' }, 'pw');
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(data.enabled).toBe(true);
@@ -473,26 +479,28 @@ describe('keycloak-api', () => {
     test('returns user when found', async () => {
       const user = { id: 'u1', username: 'testuser' };
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [user] });
-      const result = await getUserByUsername(TOKEN, REALM, 'testuser');
+      const result = await getUserByUsername(TOKEN, KEYCLOAK_URL, REALM, 'testuser');
       expect(result).toEqual(user);
     });
 
     test('returns null when not found (empty array)', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
-      const result = await getUserByUsername(TOKEN, REALM, 'missing');
+      const result = await getUserByUsername(TOKEN, KEYCLOAK_URL, REALM, 'missing');
       expect(result).toBeNull();
     });
 
     test('throws on errors', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(getUserByUsername(TOKEN, REALM, 'testuser')).rejects.toThrow('server error');
+      await expect(getUserByUsername(TOKEN, KEYCLOAK_URL, REALM, 'testuser')).rejects.toThrow(
+        'server error',
+      );
     });
   });
 
   describe('setUserPassword', () => {
     test('sends reset-password request with correct payload', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 204 });
-      await setUserPassword(TOKEN, REALM, 'user-id', 'new-password');
+      await setUserPassword(TOKEN, KEYCLOAK_URL, REALM, 'user-id', 'new-password');
 
       const [method, url, data, token] = utils.makeAuthenticatedRequest.mock.calls[0];
       expect(method).toBe('put');
@@ -507,14 +515,16 @@ describe('keycloak-api', () => {
 
     test('throws on non-2xx response', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 400 });
-      await expect(setUserPassword(TOKEN, REALM, 'user-id', 'pw')).rejects.toThrow(
+      await expect(setUserPassword(TOKEN, KEYCLOAK_URL, REALM, 'user-id', 'pw')).rejects.toThrow(
         'Unexpected status code: 400',
       );
     });
 
     test('throws on request error', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('timeout'));
-      await expect(setUserPassword(TOKEN, REALM, 'user-id', 'pw')).rejects.toThrow('timeout');
+      await expect(setUserPassword(TOKEN, KEYCLOAK_URL, REALM, 'user-id', 'pw')).rejects.toThrow(
+        'timeout',
+      );
     });
   });
 
@@ -525,7 +535,10 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 }) // verifyRoleExists
         .mockResolvedValueOnce({ status: 201 }); // create role
 
-      await createOrUpdateRole(TOKEN, REALM, { name: 'admin-role', description: 'Admin' });
+      await createOrUpdateRole(TOKEN, KEYCLOAK_URL, REALM, {
+        name: 'admin-role',
+        description: 'Admin',
+      });
 
       const [method, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(method).toBe('post');
@@ -537,7 +550,10 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 200 }) // verifyRoleExists
         .mockResolvedValueOnce({ status: 204 }); // update role
 
-      await createOrUpdateRole(TOKEN, REALM, { name: 'admin-role', description: 'Updated' });
+      await createOrUpdateRole(TOKEN, KEYCLOAK_URL, REALM, {
+        name: 'admin-role',
+        description: 'Updated',
+      });
 
       const [method, url] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(method).toBe('put');
@@ -549,9 +565,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 })
         .mockResolvedValueOnce({ status: 400 });
 
-      await expect(createOrUpdateRole(TOKEN, REALM, { name: 'bad-role' })).rejects.toThrow(
-        'Unexpected status code: 400',
-      );
+      await expect(
+        createOrUpdateRole(TOKEN, KEYCLOAK_URL, REALM, { name: 'bad-role' }),
+      ).rejects.toThrow('Unexpected status code: 400');
     });
 
     test('throws on request error', async () => {
@@ -559,9 +575,9 @@ describe('keycloak-api', () => {
         .mockResolvedValueOnce({ status: 404 })
         .mockRejectedValueOnce(new Error('network error'));
 
-      await expect(createOrUpdateRole(TOKEN, REALM, { name: 'role' })).rejects.toThrow(
-        'network error',
-      );
+      await expect(
+        createOrUpdateRole(TOKEN, KEYCLOAK_URL, REALM, { name: 'role' }),
+      ).rejects.toThrow('network error');
     });
   });
 
@@ -571,19 +587,21 @@ describe('keycloak-api', () => {
         status: 200,
         data: [{ id: 'c1', clientId: 'my-client' }],
       });
-      const result = await verifyClientExists(TOKEN, REALM, 'my-client');
+      const result = await verifyClientExists(TOKEN, KEYCLOAK_URL, REALM, 'my-client');
       expect(result).toBe(true);
     });
 
     test('returns false when client not found', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
-      const result = await verifyClientExists(TOKEN, REALM, 'missing');
+      const result = await verifyClientExists(TOKEN, KEYCLOAK_URL, REALM, 'missing');
       expect(result).toBe(false);
     });
 
     test('throws on error', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(verifyClientExists(TOKEN, REALM, 'client')).rejects.toThrow('server error');
+      await expect(verifyClientExists(TOKEN, KEYCLOAK_URL, REALM, 'client')).rejects.toThrow(
+        'server error',
+      );
     });
   });
 
@@ -593,38 +611,42 @@ describe('keycloak-api', () => {
         status: 200,
         data: [{ id: 'u1', username: 'testuser' }],
       });
-      const result = await verifyUserExists(TOKEN, REALM, 'testuser');
+      const result = await verifyUserExists(TOKEN, KEYCLOAK_URL, REALM, 'testuser');
       expect(result).toBe(true);
     });
 
     test('returns false when user not found', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
-      const result = await verifyUserExists(TOKEN, REALM, 'missing');
+      const result = await verifyUserExists(TOKEN, KEYCLOAK_URL, REALM, 'missing');
       expect(result).toBe(false);
     });
 
     test('throws on error', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(verifyUserExists(TOKEN, REALM, 'user')).rejects.toThrow('server error');
+      await expect(verifyUserExists(TOKEN, KEYCLOAK_URL, REALM, 'user')).rejects.toThrow(
+        'server error',
+      );
     });
   });
 
   describe('verifyRoleExists', () => {
     test('returns true for 200 response', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200 });
-      const result = await verifyRoleExists(TOKEN, REALM, 'admin');
+      const result = await verifyRoleExists(TOKEN, KEYCLOAK_URL, REALM, 'admin');
       expect(result).toBe(true);
     });
 
     test('returns false for non-200 response', async () => {
       utils.makeAuthenticatedRequest.mockResolvedValue({ status: 404 });
-      const result = await verifyRoleExists(TOKEN, REALM, 'missing');
+      const result = await verifyRoleExists(TOKEN, KEYCLOAK_URL, REALM, 'missing');
       expect(result).toBe(false);
     });
 
     test('throws on errors', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
-      await expect(verifyRoleExists(TOKEN, REALM, 'role')).rejects.toThrow('server error');
+      await expect(verifyRoleExists(TOKEN, KEYCLOAK_URL, REALM, 'role')).rejects.toThrow(
+        'server error',
+      );
     });
   });
 });

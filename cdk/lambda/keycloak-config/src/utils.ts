@@ -7,7 +7,7 @@
 import axios, { AxiosResponse } from 'axios';
 import https from 'https';
 
-import { AppConfig, HttpMethod } from './types';
+import { HttpMethod } from './types';
 
 /** Pause execution for specified milliseconds */
 function sleep(ms: number): Promise<void> {
@@ -86,11 +86,9 @@ function getAdminApiUrl(baseUrl: string): string {
 }
 
 /** Create configured HTTPS agent for SSL */
-function createHttpsAgent(): https.Agent | null {
-  const config = require('./config') as AppConfig;
-
+function createHttpsAgent(keycloakUrl?: string): https.Agent | null {
   // Only create HTTPS agent for HTTPS URLs
-  if (!config.KEYCLOAK_URL.startsWith('https://')) {
+  if (!keycloakUrl || !keycloakUrl.startsWith('https://')) {
     return null;
   }
 
@@ -112,7 +110,7 @@ async function makeAuthenticatedRequest(
   data: unknown,
   accessToken: string,
 ): Promise<AxiosResponse> {
-  const config = require('./config') as AppConfig;
+  const config = require('./config') as Record<string, unknown>;
 
   const requestConfig: Record<string, unknown> = {
     method,
@@ -123,7 +121,7 @@ async function makeAuthenticatedRequest(
     },
     timeout: config.API_TIMEOUT_MS,
     validateStatus: (status: number) => status < 500, // Don't throw for 4xx errors
-    httpsAgent: createHttpsAgent(),
+    httpsAgent: createHttpsAgent(url),
   };
 
   if (data && (method === 'post' || method === 'put')) {

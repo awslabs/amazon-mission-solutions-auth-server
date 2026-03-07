@@ -6,21 +6,40 @@
  * AWS utility functions for the Keycloak Configuration Lambda
  */
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 
 import config = require('./config');
 import { AdminCredentials } from './types';
 
 // Create AWS SDK clients
 const secretsManager = new SecretsManagerClient();
+const ssmClient = new SSMClient();
+
+/**
+ * Read a single SSM parameter by name.
+ * Throws if the parameter does not exist or cannot be read.
+ */
+async function getSSMParameter(name: string): Promise<string> {
+  try {
+    const response = await ssmClient.send(new GetParameterCommand({ Name: name }));
+
+    if (!response.Parameter?.Value) {
+      throw new Error(`SSM parameter ${name} has no value`);
+    }
+
+    return response.Parameter.Value;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to read SSM parameter ${name}: ${message}`);
+  }
+}
 
 /**
  * Retrieve the admin credentials from AWS Secrets Manager
  */
-async function getAdminCredentials(): Promise<AdminCredentials> {
-  const secretArn = config.KEYCLOAK_ADMIN_SECRET_ARN;
-
+async function getAdminCredentials(secretArn: string): Promise<AdminCredentials> {
   if (!secretArn) {
-    throw new Error('Keycloak admin secret ARN is not provided in environment variables');
+    throw new Error('Keycloak admin secret ARN is not provided');
   }
 
   try {
@@ -69,7 +88,7 @@ async function getOrCreateUserPassword(username: string): Promise<string> {
   }
 
   try {
-    console.log(`Retrieving password for user ${username} from secret: ${secretArn}`);
+    console.log(`Retrieving password for user ${username} from secret`);
     const response = await secretsManager.send(new GetSecretValueCommand({ SecretId: secretArn }));
 
     let password: string;
@@ -112,6 +131,7 @@ async function getOrCreateUserPassword(username: string): Promise<string> {
 }
 
 export = {
+  getSSMParameter,
   getAdminCredentials,
   getOrCreateUserPassword,
 };
