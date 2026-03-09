@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history required for PicaPica
+          fetch-depth: 0  # Full history required
 
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
@@ -35,7 +35,7 @@ jobs:
           # Rebase our branch on top of CodeCommit's mainline so the push is fast-forward.
           # This places the previous injection commit(s) in our history.
           if git rev-parse codecommit/mainline &>/dev/null; then
-            git rebase codecommit/mainline
+            git rebase -X theirs codecommit/mainline
           fi
 
           # Inject Config from repo variable
