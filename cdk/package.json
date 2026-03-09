@@ -1,6 +1,6 @@
 {
   "name": "ams-auth-server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "AWS CDK project to deploy Keycloak authentication server",
   "author": "Amazon Web Services",
   "license": "Apache-2.0",
