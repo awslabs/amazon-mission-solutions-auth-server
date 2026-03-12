@@ -5,14 +5,13 @@
 /**
  * Property-based test for Database SSM Parameter Completeness.
  *
- * **Property 1: Database SSM Parameter Completeness**
+ * **Database SSM Parameter Completeness**
  * For any valid projectName, after the Database construct is synthesized,
  * the CloudFormation template SHALL contain exactly three SSM StringParameter
  * resources under /{projectName}/auth/database/ with paths endpoint, port,
  * and secret-arn, and their stringValue properties SHALL reference the actual
  * Aurora cluster endpoint hostname, port, and credentials secret ARN respectively.
  *
- * **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -31,10 +30,8 @@ const projectNameArb = string({ minLength: 1, maxLength: 30 }).filter(
   (s: string) => /^[a-z][a-z0-9-]*$/.test(s) && !s.endsWith('-') && !s.includes('--'),
 );
 
-describe('Property 1: Database SSM Parameter Completeness', () => {
+describe('Database SSM Parameter Completeness', () => {
   /**
-   * **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
-   *
    * For any valid projectName, the Database construct creates exactly three
    * SSM StringParameter resources with correct paths and value references.
    */

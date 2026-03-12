@@ -30,11 +30,12 @@ import { KeycloakService } from './keycloak-service';
  */
 export class DataplaneConfig extends BaseConfig {
   /**
-   * Keycloak container image to use as the base for the wrapper Dockerfile build.
+   * Keycloak version string (e.g. "26.0.7" or "latest").
+   * Used as the KEYCLOAK_VERSION build arg when building from the local Dockerfile.
    * Only used when KEYCLOAK_WRAPPER_IMAGE is not set.
-   * @default "quay.io/keycloak/keycloak:latest"
+   * @default "latest"
    */
-  KEYCLOAK_IMAGE?: string;
+  KEYCLOAK_VERSION?: string;
 
   /**
    * Pre-built Keycloak wrapper image URI.
@@ -150,7 +151,7 @@ export class DataplaneConfig extends BaseConfig {
   constructor(config: ConfigType = {}) {
     super(config);
     // Set defaults after super() call
-    this.KEYCLOAK_IMAGE = this.KEYCLOAK_IMAGE ?? 'quay.io/keycloak/keycloak:latest';
+    this.KEYCLOAK_VERSION = this.KEYCLOAK_VERSION ?? 'latest';
     this.KEYCLOAK_ADMIN_USERNAME = this.KEYCLOAK_ADMIN_USERNAME ?? 'keycloak';
     this.ECS_TASK_CPU = this.ECS_TASK_CPU ?? 4096;
     this.ECS_TASK_MEMORY = this.ECS_TASK_MEMORY ?? 8192;
@@ -384,7 +385,7 @@ export class Dataplane extends Construct {
       databaseSecret: this.database.databaseSecret,
       keycloakSecret: keycloakAdminSecret,
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
-      keycloakImage: this.config.KEYCLOAK_IMAGE,
+      keycloakVersion: this.config.KEYCLOAK_VERSION,
       wrapperImage: this.config.KEYCLOAK_WRAPPER_IMAGE,
       taskCpu: this.config.ECS_TASK_CPU,
       taskMemory: this.config.ECS_TASK_MEMORY,

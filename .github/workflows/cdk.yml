@@ -18,12 +18,12 @@ jobs:
   quality-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Setup CDK
         uses: ./.github/actions/setup-cdk
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install pre-commit
@@ -36,7 +36,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup CDK
         uses: ./.github/actions/setup-cdk
       - name: Build
@@ -50,8 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: quality-checks
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install pre-commit
@@ -62,7 +62,7 @@ jobs:
           pre-commit run --hook-stage manual ash
       - name: Upload ASH Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ash-security-results
           path: aggregated_results.txt

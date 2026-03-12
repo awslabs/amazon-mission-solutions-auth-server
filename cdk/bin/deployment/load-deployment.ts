@@ -24,7 +24,7 @@
  *     "SECURITY_GROUP_ID": "sg-1234567890abcdef0"
  *   },
  *   "dataplaneConfig": {
- *     "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:latest",
+ *     "KEYCLOAK_VERSION": "latest",
  *     "ECS_TASK_CPU": 4096,
  *     "ECS_TASK_MEMORY": 8192,
  *     "KEYCLOAK_AUTH_CONFIG": {

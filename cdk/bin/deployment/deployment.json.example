@@ -7,7 +7,7 @@
     "isAdc": false
   },
   "dataplaneConfig": {
-    "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:latest",
+    "KEYCLOAK_VERSION": "latest",
     "DOMAIN_INTERNET_FACING": true,
     "DOMAIN_HOSTED_ZONE_ID": "Z0123456789ABCDEFGHIJ",
     "DOMAIN_HOSTED_ZONE_NAME": "example.com",

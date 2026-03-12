@@ -47,8 +47,9 @@ export interface KeycloakServiceProps {
   keycloakSecret: ISecret;
   /** The Keycloak admin username. */
   keycloakAdminUsername?: string;
-  /** The Keycloak base image (used as Dockerfile build ARG when wrapperImage is not set). */
-  keycloakImage?: string;
+  /** Keycloak version string (e.g. "26.0.7" or "latest"). Passed as the KEYCLOAK_VERSION
+   *  build arg when building from the local Dockerfile. Only used when wrapperImage is not set. */
+  keycloakVersion?: string;
   /** Pre-built wrapper image URI. When set, skips Docker build and uses fromRegistry. */
   wrapperImage?: string;
   /** The task CPU units. */
@@ -93,7 +94,7 @@ export class KeycloakService extends Construct {
     super(scope, id);
 
     const projectName = props.projectName ?? 'keycloak';
-    const keycloakImage = props.keycloakImage ?? 'quay.io/keycloak/keycloak:latest';
+    const keycloakVersion = props.keycloakVersion ?? 'latest';
     const taskCpu = props.taskCpu ?? 4096;
     const taskMemory = props.taskMemory ?? 8192;
     const minContainers = props.minContainers ?? 2;
@@ -203,12 +204,13 @@ export class KeycloakService extends Construct {
     // __dirname is cdk/lib/constructs/auth-server/
     // We need to go up 4 levels to reach lib/amazon-mission-solutions-auth-server/
     const repoRoot = join(__dirname, '..', '..', '..', '..');
+
     const containerImage = props.wrapperImage
       ? ContainerImage.fromRegistry(props.wrapperImage)
       : ContainerImage.fromAsset(repoRoot, {
           file: 'docker/Dockerfile',
           buildArgs: {
-            KEYCLOAK_VERSION: keycloakImage.split(':').pop() ?? 'latest',
+            KEYCLOAK_VERSION: keycloakVersion,
           },
         });
 

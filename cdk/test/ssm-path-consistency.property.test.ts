@@ -5,13 +5,11 @@
 /**
  * Property-based test for SSM Path Consistency Between Writer and Reader (Lambda).
  *
- * **Property 6: SSM Path Consistency Between Writer and Reader (Lambda)**
+ * **SSM Path Consistency Between Writer and Reader (Lambda)**
  * For any valid SSM_PREFIX value, the Config Lambda SHALL construct SSM parameter
  * paths `{SSM_PREFIX}/keycloak/url` and `{SSM_PREFIX}/keycloak/admin-secret-arn`
  * using the SSM_PREFIX environment variable, matching the paths written by the
  * KeycloakService construct.
- *
- * **Validates: Requirements 8.1, 8.2, 8.3**
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -38,10 +36,8 @@ const projectNameArb = string({ minLength: 1, maxLength: 30 }).filter(
   (s: string) => /^[a-z][a-z0-9-]*$/.test(s) && !s.endsWith('-') && !s.includes('--'),
 );
 
-describe('Property 6: SSM Path Consistency Between Writer and Reader (Lambda)', () => {
+describe('SSM Path Consistency Between Writer and Reader (Lambda)', () => {
   /**
-   * **Validates: Requirements 8.1, 8.2, 8.3**
-   *
    * For any valid projectName, the SSM parameter paths written by KeycloakService
    * (`/{projectName}/auth/keycloak/url` and `/{projectName}/auth/keycloak/admin-secret-arn`)
    * match the paths the Lambda constructs from its SSM_PREFIX environment variable
