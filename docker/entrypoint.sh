@@ -1,5 +1,6 @@
 #!/bin/bash
 # Copyright Amazon.com, Inc. or its affiliates.
+
 set -euo pipefail
 
 SSM_PREFIX="${SSM_PREFIX:-/keycloak/auth}"

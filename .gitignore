@@ -46,6 +46,9 @@ yarn-error.log*
 **/*.pem
 **/local.settings.json
 
+# Docker build artifacts (cached tarballs)
+docker/keycloak-*.tar.gz
+
 # Misc
 .DS_Store
 *~

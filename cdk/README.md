@@ -79,7 +79,7 @@ cdk/
 - **TypeScript**
 - **AWS CLI** configured with appropriate credentials
 - **AWS CDK**
-- **Docker** optional, for local Lambda testing
+- **Docker** required for building the Keycloak container image (not needed if using `KEYCLOAK_WRAPPER_IMAGE`)
 
 ### Quick Start
 
@@ -135,7 +135,7 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
     "SECURITY_GROUP_NAME": "auth-server-security-group"
   },
   "dataplaneConfig": {
-    "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:latest",
+    "KEYCLOAK_VERSION": "latest",
     "KEYCLOAK_ADMIN_USERNAME": "keycloak",
     "ECS_TASK_CPU": 4096,
     "ECS_TASK_MEMORY": 8192,
@@ -219,25 +219,26 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
 
 **Dataplane Configuration (`dataplaneConfig`):**
 
-| Field                        | Type    | Default                              | Description                                                                           |
-| ---------------------------- | ------- | ------------------------------------ | ------------------------------------------------------------------------------------- |
-| `KEYCLOAK_IMAGE`             | string  | `"quay.io/keycloak/keycloak:latest"` | Keycloak Docker image                                                                 |
-| `KEYCLOAK_ADMIN_USERNAME`    | string  | `"keycloak"`                         | Admin username                                                                        |
-| `ECS_TASK_CPU`               | number  | `4096`                               | CPU units (1024 = 1 vCPU)                                                             |
-| `ECS_TASK_MEMORY`            | number  | `8192`                               | Memory in MB                                                                          |
-| `ECS_MIN_CONTAINERS`         | number  | `2`                                  | Minimum container count                                                               |
-| `ECS_MAX_CONTAINERS`         | number  | `10`                                 | Maximum container count                                                               |
-| `ECS_CPU_UTILIZATION_TARGET` | number  | `75`                                 | Auto-scaling CPU target (%)                                                           |
-| `JAVA_OPTS`                  | string  | `"-server -Xms1024m -Xmx1638m"`      | JVM options                                                                           |
-| `DATABASE_INSTANCE_TYPE`     | string  | `"r5.large"`                         | RDS instance type                                                                     |
-| `DATABASE_PORT`              | number  | `3306`                               | RDS database port (non-default recommended for NAG RDS11 compliance)                  |
-| `BACKTRACK_WINDOW_SECONDS`   | number  | -                                    | Aurora MySQL backtrack window in seconds (max 259200, omit to disable)                |
-| `DOMAIN_HOSTNAME`            | string  | -                                    | Custom domain hostname (defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` if not provided) |
-| `DOMAIN_INTERNET_FACING`     | boolean | `true`                               | Internet-facing load balancer                                                         |
-| `DOMAIN_CERTIFICATE_ARN`     | string  | -                                    | ACM certificate ARN (optional if `DOMAIN_HOSTED_ZONE_ID` provided)                    |
-| `DOMAIN_HOSTED_ZONE_ID`      | string  | -                                    | Route53 hosted zone ID for DNS records and auto-certificate creation                  |
-| `DOMAIN_HOSTED_ZONE_NAME`    | string  | -                                    | Route53 hosted zone name (required with `DOMAIN_HOSTED_ZONE_ID`)                      |
-| `KEYCLOAK_AUTH_CONFIG`       | object  | -                                    | Keycloak realm configuration                                                          |
+| Field                        | Type    | Default                         | Description                                                                           |
+| ---------------------------- | ------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| `KEYCLOAK_VERSION`           | string  | `"latest"`                      | Keycloak version (e.g. `"26.0.7"` or `"latest"`)                                      |
+| `KEYCLOAK_WRAPPER_IMAGE`     | string  | -                               | Pre-built image URI; when set, skips Docker build and pulls from registry             |
+| `KEYCLOAK_ADMIN_USERNAME`    | string  | `"keycloak"`                    | Admin username                                                                        |
+| `ECS_TASK_CPU`               | number  | `4096`                          | CPU units (1024 = 1 vCPU)                                                             |
+| `ECS_TASK_MEMORY`            | number  | `8192`                          | Memory in MB                                                                          |
+| `ECS_MIN_CONTAINERS`         | number  | `2`                             | Minimum container count                                                               |
+| `ECS_MAX_CONTAINERS`         | number  | `10`                            | Maximum container count                                                               |
+| `ECS_CPU_UTILIZATION_TARGET` | number  | `75`                            | Auto-scaling CPU target (%)                                                           |
+| `JAVA_OPTS`                  | string  | `"-server -Xms1024m -Xmx1638m"` | JVM options                                                                           |
+| `DATABASE_INSTANCE_TYPE`     | string  | `"r5.large"`                    | RDS instance type                                                                     |
+| `DATABASE_PORT`              | number  | `3306`                          | RDS database port (non-default recommended for NAG RDS11 compliance)                  |
+| `BACKTRACK_WINDOW_SECONDS`   | number  | -                               | Aurora MySQL backtrack window in seconds (max 259200, omit to disable)                |
+| `DOMAIN_HOSTNAME`            | string  | -                               | Custom domain hostname (defaults to `auth.{DOMAIN_HOSTED_ZONE_NAME}` if not provided) |
+| `DOMAIN_INTERNET_FACING`     | boolean | `true`                          | Internet-facing load balancer                                                         |
+| `DOMAIN_CERTIFICATE_ARN`     | string  | -                               | ACM certificate ARN (optional if `DOMAIN_HOSTED_ZONE_ID` provided)                    |
+| `DOMAIN_HOSTED_ZONE_ID`      | string  | -                               | Route53 hosted zone ID for DNS records and auto-certificate creation                  |
+| `DOMAIN_HOSTED_ZONE_NAME`    | string  | -                               | Route53 hosted zone name (required with `DOMAIN_HOSTED_ZONE_ID`)                      |
+| `KEYCLOAK_AUTH_CONFIG`       | object  | -                               | Keycloak realm configuration                                                          |
 
 **Keycloak Auth Configuration (`dataplaneConfig.KEYCLOAK_AUTH_CONFIG`):**
 
@@ -359,7 +360,7 @@ Production deployment with enhanced security:
     "isAdc": false
   },
   "dataplaneConfig": {
-    "KEYCLOAK_IMAGE": "quay.io/keycloak/keycloak:26.0.7",
+    "KEYCLOAK_VERSION": "26.0.7",
     "ECS_MIN_CONTAINERS": 3,
     "ECS_MAX_CONTAINERS": 20,
     "DATABASE_INSTANCE_TYPE": "r5.xlarge",

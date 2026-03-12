@@ -5,13 +5,11 @@
 /**
  * Property-based test for Image Source Mutual Exclusivity.
  *
- * **Property 8: Image Source Mutual Exclusivity**
+ * **Image Source Mutual Exclusivity**
  * For any valid image URI string, when wrapperImage is set, the KeycloakService
  * construct SHALL use ContainerImage.fromRegistry() with that URI and SHALL NOT
  * invoke any Docker build. When wrapperImage is not set, the construct SHALL use
- * ContainerImage.fromAsset() with KEYCLOAK_IMAGE as the base image build argument.
- *
- * **Validates: Requirements 11.1, 11.3, 11.4**
+ * ContainerImage.fromAsset() with KEYCLOAK_VERSION as the build argument.
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -32,10 +30,8 @@ const imageUriArb = tuple(
   string({ minLength: 1, maxLength: 10 }).filter(s => /^[a-z0-9][a-z0-9.-]*$/.test(s)),
 ).map(([registry, repo, tag]) => `${registry}.example.com/${repo}:${tag}`);
 
-describe('Property 8: Image Source Mutual Exclusivity', () => {
+describe('Image Source Mutual Exclusivity', () => {
   /**
-   * **Validates: Requirements 11.1, 11.3**
-   *
    * When wrapperImage is set, the container definition uses the registry image
    * (no Docker asset build).
    */
@@ -73,8 +69,6 @@ describe('Property 8: Image Source Mutual Exclusivity', () => {
   });
 
   /**
-   * **Validates: Requirements 11.4**
-   *
    * When wrapperImage is NOT set, the container definition uses a Docker asset
    * (fromAsset), which produces an ECR image reference in the template.
    */

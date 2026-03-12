@@ -5,12 +5,10 @@
 /**
  * Property-based test for IAM SSM Scope Consistency.
  *
- * **Property 9: IAM SSM Scope Consistency**
+ * **IAM SSM Scope Consistency**
  * For any valid projectName, the ECS task role IAM policy SHALL contain
  * ssm:GetParameter scoped to arn:{partition}:ssm:{region}:{account}:parameter/{projectName}/auth/database/*,
  * and no broader SSM access.
- *
- * **Validates: Requirements 12.1, 12.3**
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -28,10 +26,8 @@ const projectNameArb = string({ minLength: 1, maxLength: 30 }).filter(
   (s: string) => /^[a-z][a-z0-9-]*$/.test(s) && !s.endsWith('-') && !s.includes('--'),
 );
 
-describe('Property 9: IAM SSM Scope Consistency', () => {
+describe('IAM SSM Scope Consistency', () => {
   /**
-   * **Validates: Requirements 12.1, 12.3**
-   *
    * For any valid projectName, the ECS task role has ssm:GetParameter
    * scoped to /{projectName}/auth/database/* and no broader SSM access.
    */

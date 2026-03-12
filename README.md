@@ -24,7 +24,7 @@ Ensure you have the following tools and versions installed:
 - **AWS CLI** configured with credentials
 - **Node.js** LTS recommended
 - **AWS CDK**
-- **Docker** optional, for local Lambda testing
+- **Docker** required for building the Keycloak container image (not needed if using `KEYCLOAK_WRAPPER_IMAGE`)
 
 ### Basic Deployment
 

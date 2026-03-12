@@ -90,7 +90,7 @@ describe('DataplaneConfig', () => {
   test('uses default values when no config provided', () => {
     const config = new DataplaneConfig();
 
-    expect(config.KEYCLOAK_IMAGE).toBe('quay.io/keycloak/keycloak:latest');
+    expect(config.KEYCLOAK_VERSION).toBe('latest');
     expect(config.KEYCLOAK_ADMIN_USERNAME).toBe('keycloak');
     expect(config.ECS_TASK_CPU).toBe(4096);
     expect(config.ECS_TASK_MEMORY).toBe(8192);
@@ -104,12 +104,12 @@ describe('DataplaneConfig', () => {
 
   test('merges provided config with defaults', () => {
     const config = new DataplaneConfig({
-      KEYCLOAK_IMAGE: 'custom-image:v1',
+      KEYCLOAK_VERSION: '26.0.7',
       ECS_TASK_CPU: 2048,
       DOMAIN_HOSTNAME: 'auth.example.com',
     });
 
-    expect(config.KEYCLOAK_IMAGE).toBe('custom-image:v1');
+    expect(config.KEYCLOAK_VERSION).toBe('26.0.7');
     expect(config.ECS_TASK_CPU).toBe(2048);
     expect(config.DOMAIN_HOSTNAME).toBe('auth.example.com');
     // Defaults preserved
@@ -242,7 +242,7 @@ describe('Dataplane construct', () => {
         }),
       });
 
-      expect(dataplane.config.KEYCLOAK_IMAGE).toBe('quay.io/keycloak/keycloak:latest');
+      expect(dataplane.config.KEYCLOAK_VERSION).toBe('latest');
       expect(dataplane.config.ECS_TASK_CPU).toBe(4096);
     });
 
@@ -252,13 +252,13 @@ describe('Dataplane construct', () => {
         vpc,
         securityGroup,
         config: new DataplaneConfig({
-          KEYCLOAK_IMAGE: 'custom-image:v2',
+          KEYCLOAK_VERSION: '25.0.6',
           ECS_TASK_CPU: 2048,
           DOMAIN_INTERNET_FACING: false,
         }),
       });
 
-      expect(dataplane.config.KEYCLOAK_IMAGE).toBe('custom-image:v2');
+      expect(dataplane.config.KEYCLOAK_VERSION).toBe('25.0.6');
       expect(dataplane.config.ECS_TASK_CPU).toBe(2048);
     });
   });

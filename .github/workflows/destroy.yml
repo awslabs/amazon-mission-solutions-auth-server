@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
         with:

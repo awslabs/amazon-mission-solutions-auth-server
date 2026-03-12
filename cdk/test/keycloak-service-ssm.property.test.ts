@@ -5,13 +5,11 @@
 /**
  * Property-based test for Keycloak SSM Parameter Completeness.
  *
- * **Property 2: Keycloak SSM Parameter Completeness**
+ * **Keycloak SSM Parameter Completeness**
  * For any valid projectName, after the KeycloakService construct is synthesized,
  * the CloudFormation template SHALL contain exactly two SSM StringParameter
  * resources under /{projectName}/auth/keycloak/ with paths url and admin-secret-arn,
  * and their values SHALL reference the actual ALB-derived URL and admin secret ARN.
- *
- * **Validates: Requirements 2.1, 2.2**
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -31,10 +29,8 @@ const projectNameArb = string({ minLength: 1, maxLength: 30 }).filter(
   (s: string) => /^[a-z][a-z0-9-]*$/.test(s) && !s.endsWith('-') && !s.includes('--'),
 );
 
-describe('Property 2: Keycloak SSM Parameter Completeness', () => {
+describe('Keycloak SSM Parameter Completeness', () => {
   /**
-   * **Validates: Requirements 2.1, 2.2**
-   *
    * For any valid projectName, the KeycloakService construct creates exactly two
    * SSM StringParameter resources with correct paths under /{projectName}/auth/keycloak/.
    */

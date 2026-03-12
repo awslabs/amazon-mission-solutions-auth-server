@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
         with:
@@ -55,7 +55,7 @@ jobs:
         run: npx jest --selectProjects integration --no-coverage --verbose
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: integration-test-results
           path: cdk/test-results/

@@ -357,7 +357,7 @@ describe('load-deployment', () => {
             SECURITY_GROUP_ID: 'sg-12345678',
           },
           dataplaneConfig: {
-            KEYCLOAK_IMAGE: 'quay.io/keycloak/keycloak:latest',
+            KEYCLOAK_VERSION: 'latest',
             ECS_TASK_CPU: 4096,
           },
         }),
@@ -373,7 +373,7 @@ describe('load-deployment', () => {
       expect(config.networkConfig?.VPC_ID).toBe('vpc-12345678');
       expect(config.networkConfig?.TARGET_SUBNETS).toEqual(['subnet-12345678', 'subnet-87654321']);
       expect(config.networkConfig?.SECURITY_GROUP_ID).toBe('sg-12345678');
-      expect(config.dataplaneConfig?.KEYCLOAK_IMAGE).toBe('quay.io/keycloak/keycloak:latest');
+      expect(config.dataplaneConfig?.KEYCLOAK_VERSION).toBe('latest');
       expect(config.dataplaneConfig?.ECS_TASK_CPU).toBe(4096);
     });
 
@@ -418,7 +418,7 @@ describe('load-deployment', () => {
           projectName: 'test-project',
           account: { id: '123456789012', region: 'us-west-2' },
           dataplaneConfig: {
-            KEYCLOAK_IMAGE: 'quay.io/keycloak/keycloak:latest',
+            KEYCLOAK_VERSION: 'latest',
           },
         }),
       );
