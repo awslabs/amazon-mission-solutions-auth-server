@@ -83,6 +83,39 @@ By default, without `KEYCLOAK_AUTH_CONFIG` in `deployment.json`, the deployment 
 
 This gives you a clean Keycloak server that you can configure manually through the admin console.
 
+## Developer Setup
+
+### git-secrets
+
+This project uses [git-secrets](https://github.com/awslabs/git-secrets) to prevent accidental commits of AWS credentials and other sensitive information. It runs automatically as a pre-commit hook and in CI.
+
+To set up locally:
+
+1. **Install git-secrets**
+   ```bash
+   # macOS
+   brew install git-secrets
+
+   # Linux (from source)
+   git clone https://github.com/awslabs/git-secrets.git
+   cd git-secrets && sudo make install
+   ```
+
+2. **Initialize in the repo**
+   ```bash
+   cd amazon-mission-solutions-auth-server
+   git secrets --install
+   git secrets --register-aws
+   ```
+
+3. **Install pre-commit hooks**
+   ```bash
+   pip install pre-commit
+   pre-commit install
+   ```
+
+Once configured, git-secrets will scan every commit for AWS access keys, secret keys, and account IDs. If you encounter false positives, add patterns to the `.gitallowed` file in the repo root.
+
 ## Security
 
 - All credentials are stored in AWS Secrets Manager
