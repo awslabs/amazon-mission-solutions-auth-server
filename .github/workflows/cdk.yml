@@ -26,6 +26,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Install git-secrets
+        run: |
+          git clone https://github.com/awslabs/git-secrets.git /tmp/git-secrets
+          cd /tmp/git-secrets && sudo make install
+      - name: Register AWS patterns
+        run: git secrets --register-aws
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Install pre-commit hooks
@@ -45,6 +51,21 @@ jobs:
       - name: Test
         working-directory: cdk
         run: npm test
+
+  git-secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install git-secrets
+        run: |
+          git clone https://github.com/awslabs/git-secrets.git
+          cd git-secrets && sudo make install
+      - name: Register AWS patterns
+        run: git secrets --register-aws
+      - name: Scan for secrets
+        run: git secrets --scan
 
   security-scan:
     runs-on: ubuntu-latest
