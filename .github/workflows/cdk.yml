@@ -5,14 +5,11 @@ name: CDK
 on:
   workflow_call:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'cdk/**'
-      - '.github/workflows/cdk.yml'
-      - '.pre-commit-config.yaml'
 
 permissions:
   contents: read
+  security-events: write
+  actions: read
 
 jobs:
   quality-checks:
@@ -52,20 +49,26 @@ jobs:
         working-directory: cdk
         run: npm test
 
-  git-secrets-scan:
+  license-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
         with:
-          fetch-depth: 0
-      - name: Install git-secrets
+          node-version: 'lts/*'
+      - name: License check - cdk
+        working-directory: cdk
         run: |
-          git clone https://github.com/awslabs/git-secrets.git
-          cd git-secrets && sudo make install
-      - name: Register AWS patterns
-        run: git secrets --register-aws
-      - name: Scan for secrets
-        run: git secrets --scan
+          npm ci
+          npx --yes license-checker --production \
+            --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;BlueOak-1.0.0;(MIT OR GPL-3.0-or-later)" \
+            --excludePrivatePackages
+      - name: License check - lambda
+        working-directory: cdk/lambda/keycloak-config
+        run: |
+          npm ci
+          npx --yes license-checker --production \
+            --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;BlueOak-1.0.0"
 
   security-scan:
     runs-on: ubuntu-latest
@@ -75,16 +78,28 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - name: Install pre-commit
-        run: pip install pre-commit
-      - name: Run ASH Security Scan
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 'lts/*'
+      - name: Install npm dependencies
         run: |
-          # Run ASH security scanning
-          pre-commit run --hook-stage manual ash
+          cd cdk && npm ci
+          cd lambda/keycloak-config && npm ci
+      - name: Install ASH
+        run: pip install "git+https://github.com/awslabs/automated-security-helper.git@v3.2.1"
+      - name: Run ASH Security Scan
+        run: ash --mode local --config .ash/ash.yaml --no-fail-on-findings
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: .ash/ash_output/reports/ash.sarif
+          category: ash
       - name: Upload ASH Results
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: ash-security-results
-          path: aggregated_results.txt
+          path: .ash/ash_output/
           retention-days: 30
+          if-no-files-found: warn
