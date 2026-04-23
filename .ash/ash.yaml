@@ -1,0 +1,33 @@
+scanners:
+  semgrep:
+    enabled: true
+    options:
+      rules:
+        - "auto"
+        - "p/github-actions"
+        - ".ash/semgrep-rules"
+      exclude:
+        - "cdk.out/"
+        - "dist/"
+        - ".bundle/"
+        - "node_modules/"
+        - "coverage/"
+  syft:
+    enabled: true
+    options:
+      format: "spdx-json"
+
+reporters:
+  text:
+    enabled: true
+  sarif:
+    enabled: true
+    options:
+      schema_version: "2.1.0"
+      include_rule_metadata: true
+  spdx:
+    enabled: true
+  cyclonedx:
+    enabled: true
+    options:
+      include_licenses: true

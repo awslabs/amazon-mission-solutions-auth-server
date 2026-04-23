@@ -1,0 +1,61 @@
+rules:
+  - id: axios-call-without-timeout
+    message: axios calls must specify a timeout to prevent hanging Lambda invocations
+    severity: WARNING
+    languages: [typescript]
+    paths:
+      include:
+        - "cdk/lambda/keycloak-config/src/**"
+    patterns:
+      - pattern-either:
+          - pattern: "axios.$METHOD($URL, $DATA)"
+          - pattern: "axios.$METHOD($URL)"
+      - pattern-not: "axios.$METHOD(..., {..., timeout: ..., ...})"
+
+  - id: no-console-log-of-secret-response
+    message: Do not log values derived from Secrets Manager responses or auth tokens
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include:
+        - "cdk/lambda/keycloak-config/src/**"
+    pattern-either:
+      - pattern: "console.log(..., $X.SecretString, ...)"
+      - pattern: "console.log(..., $X.password, ...)"
+      - pattern: "console.log(..., $X.access_token, ...)"
+
+  - id: keycloak-url-must-encode-realm
+    message: Realm path segments in Keycloak admin URLs must use encodeURIComponent
+    severity: WARNING
+    languages: [typescript]
+    paths:
+      include:
+        - "cdk/lambda/keycloak-config/src/keycloak-api.ts"
+    patterns:
+      - pattern: |
+          `${...}/realms/${$VAR}`
+      - pattern-not: |
+          `${...}/realms/${encodeURIComponent($VAR)}`
+
+  - id: nag-suppression-requires-reason
+    message: NagSuppressions entries must include a non-empty reason
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include:
+        - "cdk/**/*.ts"
+      exclude:
+        - "cdk/test/**"
+        - "cdk/**/*.test.ts"
+    pattern-either:
+      - pattern: 'NagSuppressions.addResourceSuppressions(..., [{..., reason: "", ...}], ...)'
+      - pattern: 'NagSuppressions.addStackSuppressions(..., [{..., reason: "", ...}], ...)'
+
+  - id: no-http-only-keycloak-url
+    message: Keycloak admin URLs must use https
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include:
+        - "cdk/lambda/keycloak-config/src/**"
+    pattern-regex: '"http://[^"]*\/realms\/'
