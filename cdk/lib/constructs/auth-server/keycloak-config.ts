@@ -36,8 +36,6 @@ export interface KeycloakConfigProps {
   customAuthConfig?: KeycloakCustomConfig;
   /** Whether to generate passwords for users. */
   generateUserPasswords?: boolean;
-  /** The website URI for CORS configuration. */
-  websiteUri?: string;
   /** Optional existing config Lambda role. */
   existingConfigLambdaRole?: IRole;
   /** Optional existing provider role. */
@@ -63,7 +61,6 @@ export class KeycloakConfig extends Construct {
     const projectName = props.projectName ?? 'keycloak';
     const keycloakAdminUsername = props.keycloakAdminUsername ?? 'keycloak';
     const generateUserPasswords = props.generateUserPasswords !== false;
-    const websiteUri = props.websiteUri ?? '*';
     const isProd = props.account.prodLike ?? false;
     const ssmPrefix = props.ssmPrefix ?? `/${projectName}/auth`;
 
@@ -135,7 +132,6 @@ export class KeycloakConfig extends Construct {
       environment: {
         SSM_PREFIX: ssmPrefix,
         KEYCLOAK_ADMIN_USERNAME: keycloakAdminUsername,
-        WEBSITE_URI: websiteUri,
         AUTH_CONFIG: authConfig ? JSON.stringify(authConfig) : '',
         USER_PASSWORD_SECRETS: JSON.stringify(
           Array.from(this.userPasswordSecrets.entries()).reduce(

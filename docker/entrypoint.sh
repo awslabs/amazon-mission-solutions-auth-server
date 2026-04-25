@@ -66,10 +66,6 @@ while true; do
 
   if [ $ELAPSED -ge $DB_WAIT_TIMEOUT ]; then
     echo "ERROR: Database not available after ${DB_WAIT_TIMEOUT}s (status: $DB_STATUS)"
-    # Log the full error for debugging
-    aws rds describe-db-clusters \
-      --db-cluster-identifier "$DB_CLUSTER_ID" \
-      --region "$AWS_REGION" 2>&1 || true
     exit 1
   fi
 

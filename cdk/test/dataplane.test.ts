@@ -1298,3 +1298,70 @@ describe('Dataplane decoupling', () => {
     });
   });
 });
+
+describe('ALB WAF', () => {
+  function buildStack(config: Partial<DataplaneConfig> = {}): Template {
+    const app = new App();
+    const stack = new Stack(app, 'TestStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    const vpc = new Vpc(stack, 'TestVpc', { maxAzs: 2 });
+    const securityGroup = new SecurityGroup(stack, 'TestSG', { vpc });
+    new Dataplane(stack, 'Dataplane', {
+      account: createTestAccount(),
+      vpc,
+      securityGroup,
+      projectName: 'test-project',
+      config: new DataplaneConfig({ DOMAIN_INTERNET_FACING: false, ...config }),
+    });
+    return Template.fromStack(stack);
+  }
+
+  test('WebACL is created and associated to the ALB by default', () => {
+    const template = buildStack();
+    template.resourceCountIs('AWS::WAFv2::WebACL', 1);
+    template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
+    template.resourceCountIs('AWS::WAFv2::LoggingConfiguration', 1);
+  });
+
+  test('WebACL includes KnownBadInputs and rate-limit rules', () => {
+    const template = buildStack();
+    template.hasResourceProperties('AWS::WAFv2::WebACL', {
+      Scope: 'REGIONAL',
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Name: 'AWSManagedRulesKnownBadInputsRuleSet',
+          Statement: {
+            ManagedRuleGroupStatement: {
+              VendorName: 'AWS',
+              Name: 'AWSManagedRulesKnownBadInputsRuleSet',
+            },
+          },
+        }),
+        Match.objectLike({
+          Name: 'RateLimitPerIp',
+          Action: { Block: {} },
+          Statement: { RateBasedStatement: { Limit: 2000, AggregateKeyType: 'IP' } },
+        }),
+      ]),
+    });
+  });
+
+  test('custom REQUESTS_PER_5_MIN is honored', () => {
+    const template = buildStack({ DOMAIN_WAF: { REQUESTS_PER_5_MIN: 500 } });
+    template.hasResourceProperties('AWS::WAFv2::WebACL', {
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Name: 'RateLimitPerIp',
+          Statement: { RateBasedStatement: { Limit: 500 } },
+        }),
+      ]),
+    });
+  });
+
+  test('WAF is skipped when DOMAIN_WAF.ENABLED is false', () => {
+    const template = buildStack({ DOMAIN_WAF: { ENABLED: false } });
+    template.resourceCountIs('AWS::WAFv2::WebACL', 0);
+    template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 0);
+  });
+});

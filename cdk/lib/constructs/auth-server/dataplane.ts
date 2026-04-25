@@ -17,6 +17,7 @@ import { Construct } from 'constructs';
 
 import { KeycloakCustomConfig } from '../../utils/keycloak-config-loader';
 import { BaseConfig, ConfigType, OSMLAccount } from '../types';
+import { AlbWaf } from './alb-waf';
 import { Database } from './database';
 import { KeycloakConfig } from './keycloak-config';
 import { KeycloakService } from './keycloak-service';
@@ -136,6 +137,16 @@ export class DataplaneConfig extends BaseConfig {
    * @default true
    */
   DOMAIN_INTERNET_FACING?: boolean;
+
+  /**
+   * WAFv2 configuration attached to the ALB.
+   */
+  DOMAIN_WAF?: {
+    /** @default true */
+    ENABLED?: boolean;
+    /** Per-IP rate limit within a 5-minute window. @default 2000 */
+    REQUESTS_PER_5_MIN?: number;
+  };
 
   /**
    * Keycloak authentication configuration for realms, clients, and users.
@@ -398,6 +409,16 @@ export class Dataplane extends Construct {
       internetFacing: this.config.DOMAIN_INTERNET_FACING,
     });
 
+    // Attach WAFv2 to the ALB (enabled by default)
+    if (this.config.DOMAIN_WAF?.ENABLED !== false) {
+      new AlbWaf(this, 'AlbWaf', {
+        loadBalancerArn: this.keycloakService.loadBalancer.loadBalancerArn,
+        projectName,
+        isProd,
+        requestsPer5Min: this.config.DOMAIN_WAF?.REQUESTS_PER_5_MIN,
+      });
+    }
+
     // Allow Keycloak service to connect to database
     this.database.dbSecurityGroup.addIngressRule(
       this.keycloakService.serviceSecurityGroup,
@@ -431,7 +452,6 @@ export class Dataplane extends Construct {
         keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
         customAuthConfig: this.config.KEYCLOAK_AUTH_CONFIG,
         generateUserPasswords: true,
-        websiteUri: this.keycloakService.keycloakUrl,
       });
 
       // Scope dependency to the custom resource so the Lambda can destroy in parallel with the service

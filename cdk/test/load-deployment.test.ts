@@ -462,5 +462,32 @@ describe('load-deployment', () => {
       expect(authConfig?.clients?.[0].postLogoutRedirectUris).toEqual(['https://example.com/*']);
       expect(authConfig?.clients?.[0].webOrigins).toEqual(['https://example.com']);
     });
+
+    test('throws when client uses placeholders but has no websiteUri', () => {
+      writeFileSync(
+        deploymentJsonPath,
+        JSON.stringify({
+          projectName: 'test-project',
+          account: { id: '123456789012', region: 'us-west-2' },
+          dataplaneConfig: {
+            KEYCLOAK_AUTH_CONFIG: {
+              realm: 'test-realm',
+              enabled: true,
+              clients: [
+                {
+                  clientId: 'test-client',
+                  publicClient: true,
+                  authorizationServicesEnabled: false,
+                  redirectUris: ['__PLACEHOLDER_REDIRECT_URI__'],
+                },
+              ],
+              users: [],
+            },
+          },
+        }),
+      );
+
+      expect(() => loadDeploymentConfig()).toThrow(/uses placeholder URIs but has no "websiteUri"/);
+    });
   });
 });

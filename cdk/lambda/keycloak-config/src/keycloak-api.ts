@@ -106,17 +106,6 @@ async function loginWithRetry(
 }
 
 /**
- * Replace a placeholder value in a list of URIs
- */
-function replacePlaceholders(
-  uris: string[],
-  placeholder: string,
-  replacement: string | null,
-): string[] {
-  return uris.map(uri => (uri === placeholder && replacement ? replacement : uri));
-}
-
-/**
  * Create or update a realm
  */
 async function createOrUpdateRealmWithConfig(
@@ -234,45 +223,20 @@ async function createOrUpdateClient(
     console.log(`${clientExists ? 'Updating' : 'Creating'} client: ${clientId} in realm: ${realm}`);
 
     const { websiteUri, postLogoutRedirectUris, ...cleanClientConfig } = clientConfig;
+    void websiteUri;
 
     cleanClientConfig.attributes = cleanClientConfig.attributes || {};
 
     if (postLogoutRedirectUris && postLogoutRedirectUris.length > 0) {
-      const processedUris = replacePlaceholders(
-        postLogoutRedirectUris,
-        '__PLACEHOLDER_REDIRECT_URI__',
-        websiteUri ? `${websiteUri}/*` : null,
-      );
-
-      cleanClientConfig.attributes!['post.logout.redirect.uris'] = processedUris.join(',');
+      cleanClientConfig.attributes!['post.logout.redirect.uris'] = postLogoutRedirectUris.join(',');
       console.log(
         `Processed postLogoutRedirectUris into attributes: ${cleanClientConfig.attributes!['post.logout.redirect.uris']}`,
       );
     }
 
-    if (cleanClientConfig.redirectUris) {
-      cleanClientConfig.redirectUris = replacePlaceholders(
-        cleanClientConfig.redirectUris,
-        '__PLACEHOLDER_REDIRECT_URI__',
-        websiteUri ? `${websiteUri}/*` : null,
-      );
-      console.log(`Processed redirectUris: ${JSON.stringify(cleanClientConfig.redirectUris)}`);
-    }
-
-    if (cleanClientConfig.webOrigins) {
-      cleanClientConfig.webOrigins = replacePlaceholders(
-        cleanClientConfig.webOrigins,
-        '__PLACEHOLDER_WEB_ORIGIN__',
-        websiteUri || null,
-      );
-      console.log(`Processed webOrigins: ${JSON.stringify(cleanClientConfig.webOrigins)}`);
-    }
-
     const fullConfig = clientExists
       ? { ...existingClient, ...cleanClientConfig }
       : cleanClientConfig;
-
-    console.log(`Sending client config to Keycloak: ${JSON.stringify(fullConfig, null, 2)}`);
 
     const response = await utils.makeAuthenticatedRequest(method, url, fullConfig, token);
 

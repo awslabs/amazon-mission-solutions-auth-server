@@ -25,7 +25,6 @@ function getEnvVar(
 const config = {
   SSM_PREFIX: getEnvVar('SSM_PREFIX', null, true) as string,
   KEYCLOAK_ADMIN_USERNAME: getEnvVar('KEYCLOAK_ADMIN_USERNAME', 'keycloak') as string,
-  WEBSITE_URI: getEnvVar('WEBSITE_URI', '*') as string,
   AUTH_CONFIG: getEnvVar('AUTH_CONFIG', '{}') as string,
   USER_PASSWORD_SECRETS: getEnvVar('USER_PASSWORD_SECRETS', '{}') as string,
   API_TIMEOUT_MS: parseInt(getEnvVar('API_TIMEOUT_MS', '30000') as string, 10),

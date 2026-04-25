@@ -135,12 +135,13 @@ describe('aws-utils', () => {
       );
     });
 
-    test('returns placeholder on ResourceNotFoundException', async () => {
+    test('throws on ResourceNotFoundException', async () => {
       const error = new Error('not found') as Error & { name: string };
       error.name = 'ResourceNotFoundException';
       mockSend.mockRejectedValue(error);
-      const result = await getOrCreateUserPassword('testuser');
-      expect(result).toBe('placeholder-password-will-be-created-by-cdk');
+      await expect(getOrCreateUserPassword('testuser')).rejects.toThrow(
+        'Password secret for user testuser not found',
+      );
     });
 
     test('throws on other AWS errors with context message', async () => {

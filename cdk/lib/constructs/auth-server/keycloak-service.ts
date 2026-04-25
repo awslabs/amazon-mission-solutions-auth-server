@@ -306,7 +306,6 @@ export class KeycloakService extends Construct {
       vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
       minHealthyPercent: 50,
       maxHealthyPercent: 200,
-      enableExecuteCommand: true,
     });
 
     this.service.attachToApplicationTargetGroup(targetGroup);
@@ -377,12 +376,6 @@ export class KeycloakService extends Construct {
     NagSuppressions.addResourceSuppressions(
       this.ecsRoles.taskRole,
       [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'ECS Exec (enableExecuteCommand) requires KMS Decrypt with wildcard resource for SSM session encryption. This is a CDK-managed default policy.',
-          appliesTo: ['Resource::*'],
-        },
         {
           id: 'AwsSolutions-IAM5',
           reason:

@@ -316,7 +316,7 @@ export function resolveRedirectUri(clientConfig: {
 }): string | undefined {
   const uris = clientConfig.redirectUris ?? [];
   for (const uri of uris) {
-    // Skip placeholders — these get resolved by the Lambda at deploy time
+    // Skip placeholders — these get resolved at CDK synth time from websiteUri
     if (uri.startsWith('__PLACEHOLDER')) continue;
     // If it's a concrete URI without a wildcard, use it directly
     if (uri.startsWith('http') && !uri.endsWith('*')) return uri;
@@ -325,7 +325,7 @@ export function resolveRedirectUri(clientConfig: {
       return uri.replace(/\/\*$/, '/callback');
     }
   }
-  // All URIs were placeholders — if websiteUri is set, the Lambda registered
+  // All URIs were placeholders — if websiteUri is set, synth would have registered
   // ${websiteUri}/* so we can derive a matching concrete URI from it
   if (clientConfig.websiteUri) {
     return `${clientConfig.websiteUri}/callback`;
