@@ -119,9 +119,9 @@ async function getOrCreateUserPassword(username: string): Promise<string> {
       error instanceof Error &&
       (error as Error & { name: string }).name === 'ResourceNotFoundException'
     ) {
-      console.log(`Secret not found for user ${username}, will be created by CDK`);
-      // Return a placeholder for now - actual password will be created by CDK
-      return 'placeholder-password-will-be-created-by-cdk';
+      throw new Error(
+        `Password secret for user ${username} not found. Ensure CDK has created the secret before running this Lambda.`,
+      );
     }
 
     console.error(`Error retrieving password for user ${username}:`, error);

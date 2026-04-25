@@ -49,7 +49,7 @@ module.exports = {
         '<rootDir>/lambda/keycloak-config/test/setup.ts',
         '<rootDir>/cdk.out/',
       ],
-      modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/'],
+      modulePathIgnorePatterns: ['<rootDir>/cdk.out/', '<rootDir>/dist/', '<rootDir>/lambda/keycloak-config/.bundle/'],
       collectCoverageFrom: [
         '<rootDir>/lambda/keycloak-config/src/**/*.ts',
         '<rootDir>/lambda/keycloak-config/index.ts',

@@ -48,7 +48,6 @@ The Lambda is configured through the following environment variables:
 | `KEYCLOAK_URL`              | Base URL of the Keycloak server                              | Yes      | —          |
 | `KEYCLOAK_ADMIN_SECRET_ARN` | ARN of Secrets Manager secret containing admin credentials   | Yes      | —          |
 | `KEYCLOAK_ADMIN_USERNAME`   | Master realm admin username (must match secret)              | No       | `keycloak` |
-| `WEBSITE_URI`               | Base URI for client redirect/origin configuration            | No       | `*`        |
 | `AUTH_CONFIG`               | JSON string containing realm, client, and user configuration | No       | `{}`       |
 | `USER_PASSWORD_SECRETS`     | JSON mapping of usernames to password secret ARNs            | No       | `{}`       |
 | `API_TIMEOUT_MS`            | Timeout in milliseconds for Keycloak API requests            | No       | `30000`    |

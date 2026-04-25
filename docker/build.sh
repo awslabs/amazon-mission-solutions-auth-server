@@ -39,11 +39,17 @@ done
 
 IMAGE_NAME="${IMAGE_NAME:-ams-keycloak}"
 
-# --- Resolve version ---
+# --- Resolve version and get tarball digest from GitHub ---
 if [ "${KEYCLOAK_VERSION}" = "latest" ]; then
+  RELEASE_URL="https://api.github.com/repos/keycloak/keycloak/releases/latest"
   echo "Resolving latest Keycloak version from GitHub..."
-  API_RESPONSE=$(curl -fsSL \
-    "https://api.github.com/repos/keycloak/keycloak/releases/latest")
+else
+  RELEASE_URL="https://api.github.com/repos/keycloak/keycloak/releases/tags/${KEYCLOAK_VERSION}"
+fi
+
+API_RESPONSE=$(curl -fsSL "${RELEASE_URL}")
+
+if [ "${KEYCLOAK_VERSION}" = "latest" ]; then
   KEYCLOAK_VERSION=$(echo "${API_RESPONSE}" \
     | grep -m1 '"tag_name"' \
     | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
@@ -54,21 +60,38 @@ if [ "${KEYCLOAK_VERSION}" = "latest" ]; then
   echo "Resolved: ${KEYCLOAK_VERSION}"
 fi
 
-# --- Download tarball if not already cached ---
-TARBALL="${REPO_ROOT}/docker/keycloak-${KEYCLOAK_VERSION}.tar.gz"
-if [ -f "${TARBALL}" ]; then
-  echo "Using cached tarball: ${TARBALL}"
-else
-  TARBALL_URL="https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz"
-  echo "Downloading Keycloak ${KEYCLOAK_VERSION}..."
-  HTTP_CODE=$(curl -fsSL -o "${TARBALL}" -w "%{http_code}" "${TARBALL_URL}" 2>/dev/null) || true
-  if [ ! -f "${TARBALL}" ] || [ "$(stat -c%s "${TARBALL}" 2>/dev/null || echo 0)" -lt 1000 ]; then
-    rm -f "${TARBALL}"
-    echo "ERROR: Keycloak version '${KEYCLOAK_VERSION}' not found on GitHub (HTTP ${HTTP_CODE})." >&2
-    echo "Check available versions at: https://github.com/keycloak/keycloak/releases" >&2
-    exit 1
-  fi
+TARBALL_NAME="keycloak-${KEYCLOAK_VERSION}.tar.gz"
+EXPECTED_DIGEST=$(echo "${API_RESPONSE}" \
+  | jq -r --arg name "${TARBALL_NAME}" \
+      '.assets[] | select(.name == $name) | .digest | sub("^sha256:"; "")')
+if [ -z "${EXPECTED_DIGEST}" ]; then
+  echo "ERROR: Could not find sha256 digest for ${TARBALL_NAME} in GitHub release metadata" >&2
+  exit 1
 fi
+echo "Expected SHA256: ${EXPECTED_DIGEST}"
+
+# --- Download tarball ---
+TARBALL="${REPO_ROOT}/docker/${TARBALL_NAME}"
+trap 'rm -f "${TARBALL}"' EXIT
+TARBALL_URL="https://github.com/keycloak/keycloak/releases/download/${KEYCLOAK_VERSION}/keycloak-${KEYCLOAK_VERSION}.tar.gz"
+echo "Downloading Keycloak ${KEYCLOAK_VERSION}..."
+HTTP_CODE=$(curl -fsSL -o "${TARBALL}" -w "%{http_code}" "${TARBALL_URL}" 2>/dev/null) || true
+if [ ! -f "${TARBALL}" ] || [ "$(stat -c%s "${TARBALL}" 2>/dev/null || echo 0)" -lt 1000 ]; then
+  echo "ERROR: Keycloak version '${KEYCLOAK_VERSION}' not found on GitHub (HTTP ${HTTP_CODE})." >&2
+  echo "Check available versions at: https://github.com/keycloak/keycloak/releases" >&2
+  exit 1
+fi
+
+# --- Verify tarball integrity ---
+ACTUAL_DIGEST=$(sha256sum "${TARBALL}" | awk '{print $1}')
+if [ "${ACTUAL_DIGEST}" != "${EXPECTED_DIGEST}" ]; then
+  rm -f "${TARBALL}"
+  echo "ERROR: SHA256 mismatch for ${TARBALL}" >&2
+  echo "  expected: ${EXPECTED_DIGEST}" >&2
+  echo "  actual:   ${ACTUAL_DIGEST}" >&2
+  exit 1
+fi
+echo "SHA256 verified: ${ACTUAL_DIGEST}"
 
 # --- Build image ---
 BUILD_ARGS=(

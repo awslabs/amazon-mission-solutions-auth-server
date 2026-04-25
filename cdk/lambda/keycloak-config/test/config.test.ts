@@ -12,7 +12,6 @@ describe('config', () => {
     // Clear all relevant env vars
     delete process.env.SSM_PREFIX;
     delete process.env.KEYCLOAK_ADMIN_USERNAME;
-    delete process.env.WEBSITE_URI;
     delete process.env.AUTH_CONFIG;
     delete process.env.USER_PASSWORD_SECRETS;
     delete process.env.API_TIMEOUT_MS;
@@ -45,11 +44,6 @@ describe('config', () => {
       expect(config.KEYCLOAK_ADMIN_USERNAME).toBe('keycloak');
     });
 
-    test('uses default for WEBSITE_URI', () => {
-      const config = loadConfig();
-      expect(config.WEBSITE_URI).toBe('*');
-    });
-
     test('uses default for AUTH_CONFIG', () => {
       const config = loadConfig();
       expect(config.AUTH_CONFIG).toBe('{}');
@@ -72,7 +66,6 @@ describe('config', () => {
     test('uses custom values when env vars are set', () => {
       const config = loadConfig({
         KEYCLOAK_ADMIN_USERNAME: 'myadmin',
-        WEBSITE_URI: 'https://myapp.com',
         AUTH_CONFIG: '{"realm":"test"}',
         USER_PASSWORD_SECRETS: '{"user1":"arn:secret"}',
         API_TIMEOUT_MS: '5000',
@@ -82,7 +75,6 @@ describe('config', () => {
         API_RETRY_INTERVAL_MS: '500',
       });
       expect(config.KEYCLOAK_ADMIN_USERNAME).toBe('myadmin');
-      expect(config.WEBSITE_URI).toBe('https://myapp.com');
       expect(config.AUTH_CONFIG).toBe('{"realm":"test"}');
       expect(config.USER_PASSWORD_SECRETS).toBe('{"user1":"arn:secret"}');
       expect(config.API_TIMEOUT_MS).toBe(5000);

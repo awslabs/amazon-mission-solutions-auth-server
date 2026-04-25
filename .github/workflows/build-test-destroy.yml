@@ -31,7 +31,8 @@ jobs:
     uses: ./.github/workflows/cdk.yml
     secrets: inherit
 
-  changes:
+  check-doc-only:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       deploy_relevant: ${{ steps.filter.outputs.deploy }}
@@ -63,9 +64,9 @@ jobs:
     needs:
       - check
       - cdk-checks
-      - changes
+      - check-doc-only
       - get-aws-region
-    if: needs.changes.outputs.deploy_relevant == 'true' || github.event_name != 'pull_request'
+    if: needs.check-doc-only.outputs.deploy_relevant == 'true' || github.event_name != 'pull_request'
     uses: ./.github/workflows/deploy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}

@@ -207,7 +207,25 @@ let hasLoggedDeploymentConfig = false;
 function processAuthConfigPlaceholders(config: KeycloakCustomConfig): KeycloakCustomConfig {
   if (config.clients && Array.isArray(config.clients)) {
     config.clients.forEach(client => {
-      const websiteUri = client.websiteUri || '*';
+      const allUris = [
+        ...(client.redirectUris ?? []),
+        ...(client.postLogoutRedirectUris ?? []),
+        ...(client.webOrigins ?? []),
+      ];
+      const hasPlaceholder = allUris.some(
+        uri => uri === '__PLACEHOLDER_REDIRECT_URI__' || uri === '__PLACEHOLDER_WEB_ORIGIN__',
+      );
+
+      if (hasPlaceholder && !client.websiteUri) {
+        throw new DeploymentConfigError(
+          `Client "${client.clientId ?? '<unknown>'}" uses placeholder URIs but has no "websiteUri" set. Set "websiteUri" on the client to resolve placeholders.`,
+        );
+      }
+
+      const websiteUri = client.websiteUri;
+      if (!websiteUri) {
+        return;
+      }
       const redirectUri = websiteUri === '*' ? '*' : `${websiteUri}/*`;
       const webOrigin = websiteUri;
 
@@ -265,7 +283,7 @@ export function loadDeploymentConfig(): DeploymentConfig {
   }
 
   // Validate top-level structure
-  if (!parsed || typeof parsed !== 'object' || parsed === null) {
+  if (typeof parsed !== 'object' || parsed === null) {
     throw new DeploymentConfigError('deployment.json must contain a valid JSON object');
   }
 

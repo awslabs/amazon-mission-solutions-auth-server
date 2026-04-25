@@ -36,7 +36,6 @@ export interface ProviderResponse {
 export interface AppConfig {
   SSM_PREFIX: string;
   KEYCLOAK_ADMIN_USERNAME: string;
-  WEBSITE_URI: string;
   AUTH_CONFIG: string;
   USER_PASSWORD_SECRETS: string;
   API_TIMEOUT_MS: number;

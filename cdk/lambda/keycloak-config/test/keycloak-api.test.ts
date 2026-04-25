@@ -231,30 +231,28 @@ describe('keycloak-api', () => {
       expect(url).toContain('uuid-123');
     });
 
-    test('replaces __PLACEHOLDER_REDIRECT_URI__ in redirectUris', async () => {
+    test('passes redirectUris through unchanged (no placeholder replacement)', async () => {
       utils.makeAuthenticatedRequest
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 201 });
 
       await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
-        websiteUri: 'https://myapp.com',
-        redirectUris: ['__PLACEHOLDER_REDIRECT_URI__', 'https://other.com/*'],
+        redirectUris: ['https://myapp.com/*', 'https://other.com/*'],
       });
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
       expect(data.redirectUris).toEqual(['https://myapp.com/*', 'https://other.com/*']);
     });
 
-    test('replaces __PLACEHOLDER_WEB_ORIGIN__ in webOrigins', async () => {
+    test('passes webOrigins through unchanged (no placeholder replacement)', async () => {
       utils.makeAuthenticatedRequest
         .mockResolvedValueOnce({ status: 200, data: [] })
         .mockResolvedValueOnce({ status: 201 });
 
       await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
-        websiteUri: 'https://myapp.com',
-        webOrigins: ['__PLACEHOLDER_WEB_ORIGIN__'],
+        webOrigins: ['https://myapp.com'],
       });
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
@@ -268,8 +266,7 @@ describe('keycloak-api', () => {
 
       await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
         clientId: 'my-client',
-        websiteUri: 'https://myapp.com',
-        postLogoutRedirectUris: ['__PLACEHOLDER_REDIRECT_URI__', 'https://other.com/logout'],
+        postLogoutRedirectUris: ['https://myapp.com/*', 'https://other.com/logout'],
       });
 
       const [, , data] = utils.makeAuthenticatedRequest.mock.calls[1];

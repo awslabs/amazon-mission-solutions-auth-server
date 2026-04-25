@@ -84,42 +84,6 @@ export class ECSRoles extends Construct {
       description: 'Allows the Auth Server Keycloak containers to access necessary AWS services',
     });
 
-    const taskPolicy = new ManagedPolicy(this, 'TaskPolicy', {
-      managedPolicyName: `${props.taskRoleName}-policy`,
-    });
-
-    // SSM permissions for ECS Exec functionality
-    const ssmPolicyStatement = new PolicyStatement({
-      sid: 'SSMCore',
-      effect: Effect.ALLOW,
-      actions: [
-        'ssm:UpdateInstanceInformation',
-        'ssmmessages:CreateControlChannel',
-        'ssmmessages:CreateDataChannel',
-        'ssmmessages:OpenControlChannel',
-        'ssmmessages:OpenDataChannel',
-      ],
-      resources: ['*'],
-    });
-
-    taskPolicy.addStatements(ssmPolicyStatement);
-
-    taskRole.addManagedPolicy(taskPolicy);
-
-    // Add NAG suppressions for necessary wildcard permissions
-    NagSuppressions.addResourceSuppressions(
-      taskPolicy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'SSM and SSM Messages permissions require wildcard for ECS Exec functionality to work with dynamic session channels.',
-          appliesTo: ['Resource::*'],
-        },
-      ],
-      true,
-    );
-
     return taskRole;
   }
 

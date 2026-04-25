@@ -20,7 +20,6 @@ export function createConfigMock(overrides: Partial<ConfigMock> = {}): ConfigMoc
   return {
     SSM_PREFIX: '/test-project/auth',
     KEYCLOAK_ADMIN_USERNAME: 'keycloak',
-    WEBSITE_URI: 'https://myapp.example.com',
     AUTH_CONFIG: '{}',
     USER_PASSWORD_SECRETS: '{}',
     API_TIMEOUT_MS: 5000,
