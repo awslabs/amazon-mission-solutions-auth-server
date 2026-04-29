@@ -66,7 +66,11 @@ jobs:
       - cdk-checks
       - check-doc-only
       - get-aws-region
-    if: needs.check-doc-only.outputs.deploy_relevant == 'true' || github.event_name != 'pull_request'
+    if: |
+      always() &&
+      needs.check.result == 'success' &&
+      needs.cdk-checks.result == 'success' &&
+      (needs.check-doc-only.result == 'skipped' || needs.check-doc-only.outputs.deploy_relevant == 'true')
     uses: ./.github/workflows/deploy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
@@ -76,6 +80,7 @@ jobs:
     needs:
       - deploy
       - get-aws-region
+    if: needs.deploy.result == 'success'
     uses: ./.github/workflows/integ-test.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
