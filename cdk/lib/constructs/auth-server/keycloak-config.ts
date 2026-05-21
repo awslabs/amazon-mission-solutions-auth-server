@@ -42,6 +42,20 @@ export interface KeycloakConfigProps {
   existingProviderRole?: IRole;
   /** SSM prefix for reading keycloak params. Defaults to /{projectName}/auth. */
   ssmPrefix?: string;
+  /**
+   * Whether to explicitly manage the Provider framework Lambda's log group.
+   *
+   * When true (default), a LogGroup is created with a DESTROY removal policy
+   * in non-prod accounts so `cdk destroy` cleans it up and subsequent
+   * deployments do not fail with "log group already exists".
+   *
+   * Set to false when an external mechanism (e.g. a CDK Aspect) manages log
+   * retention for the Provider framework Lambda, to avoid duplicate
+   * configuration. When false, the framework Lambda auto-creates its log
+   * group at runtime; retention and cleanup become the caller's
+   * responsibility.
+   */
+  manageProviderLogGroup?: boolean;
 }
 
 /**
@@ -167,17 +181,21 @@ export class KeycloakConfig extends Construct {
       }),
     );
 
-    // Create Provider log group
-    const providerLogGroup = new LogGroup(this, 'ProviderLogGroup', {
-      retention: RetentionDays.ONE_MONTH,
-      logGroupName: `/aws/lambda/${projectName}-auth-keycloak-config-provider`,
-      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
-    });
+    // Optionally own the Provider framework Lambda's log group so it is
+    // cleaned up on `cdk destroy`. See `manageProviderLogGroup` prop.
+    const providerLogGroup =
+      props.manageProviderLogGroup === false
+        ? undefined
+        : new LogGroup(this, 'ProviderLogGroup', {
+            retention: RetentionDays.ONE_MONTH,
+            logGroupName: `/aws/lambda/${projectName}-auth-keycloak-config-provider`,
+            removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+          });
 
     // Create Provider for the Custom Resource
     const provider = new Provider(this, 'Provider', {
       onEventHandler: this.configFunction,
-      logGroup: providerLogGroup,
+      ...(providerLogGroup ? { logGroup: providerLogGroup } : {}),
       role: this.lambdaRoles.providerRole,
     });
 

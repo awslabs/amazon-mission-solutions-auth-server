@@ -200,10 +200,12 @@ export class KeycloakService extends Construct {
       AWS_REGION: Stack.of(this).region,
     };
 
-    // Configurable image sourcing: pre-built registry image or local Docker build
-    // __dirname is cdk/lib/constructs/auth-server/
-    // We need to go up 4 levels to reach lib/amazon-mission-solutions-auth-server/
-    const repoRoot = join(__dirname, '..', '..', '..', '..');
+    // Resolve the package root containing docker/Dockerfile.
+    // Source layout:  cdk/lib/constructs/auth-server/  -> up 4 levels
+    // Built layout:   cdk/dist/lib/constructs/auth-server/ -> up 5 levels
+    const repoRoot = __dirname.includes('/dist/')
+      ? join(__dirname, '..', '..', '..', '..', '..')
+      : join(__dirname, '..', '..', '..', '..');
 
     const containerImage = props.wrapperImage
       ? ContainerImage.fromRegistry(props.wrapperImage)

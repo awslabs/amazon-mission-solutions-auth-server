@@ -25,5 +25,5 @@
     "esModuleInterop": true
   },
   "exclude": ["node_modules", "cdk.out", "dist"],
-  "include": ["bin/**/*", "lib/**/*", "test/**/*"]
+  "include": ["index.ts", "bin/**/*", "lib/**/*", "test/**/*"]
 }

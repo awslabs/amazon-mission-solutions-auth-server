@@ -11,7 +11,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "prebundle:lambda": "cd lambda/keycloak-config && rm -f package-lock.json && npm install && npx tsc && mkdir -p .bundle && cp -r dist/* .bundle/ && cp package.json .bundle/ && cd .bundle && npm install --omit=dev",
-    "build": "npm run prebundle:lambda && tsc",
+    "build": "npm run prebundle:lambda && tsc && mkdir -p dist/lambda/keycloak-config && cp -r lambda/keycloak-config/.bundle dist/lambda/keycloak-config/.bundle",
     "watch": "tsc -w",
     "test": "jest --selectProjects cdk keycloak-lambda",
     "test:integration": "jest --selectProjects integration --no-coverage",
@@ -45,7 +45,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.233.0",
+    "aws-cdk-lib": "^2.257.0",
     "cdk-nag": "^2.37.55",
     "constructs": "^10.4.2",
     "source-map-support": "^0.5.21"
