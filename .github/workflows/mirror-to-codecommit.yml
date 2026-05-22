@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+# Default to read-only at the workflow level; jobs that need additional
+# permissions opt in explicitly via their own `permissions:` block.
+permissions:
+  contents: read
+
 jobs:
   mirror:
     runs-on: ubuntu-latest

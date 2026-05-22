@@ -49,6 +49,10 @@ yarn-error.log*
 # Docker build artifacts (cached tarballs)
 docker/keycloak-*.tar.gz
 
+# ASH (Automated Security Helper) local run outputs
+.ash/ash_output/
+.ash/*_out.txt
+
 # Misc
 .DS_Store
 *~

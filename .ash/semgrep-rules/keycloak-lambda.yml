@@ -13,16 +13,19 @@ rules:
       - pattern-not: "axios.$METHOD(..., {..., timeout: ..., ...})"
 
   - id: no-console-log-of-secret-response
-    message: Do not log values derived from Secrets Manager responses or auth tokens
+    message: Do not log values that may contain secrets or auth tokens
     severity: ERROR
     languages: [typescript]
     paths:
       include:
-        - "cdk/lambda/keycloak-config/src/**"
+        - "cdk/**"
     pattern-either:
       - pattern: "console.log(..., $X.SecretString, ...)"
       - pattern: "console.log(..., $X.password, ...)"
       - pattern: "console.log(..., $X.access_token, ...)"
+      - pattern: "console.log(..., $X.id_token, ...)"
+      - pattern: "console.log(..., $X.refresh_token, ...)"
+      - pattern: "console.log(..., $X.clientSecret, ...)"
 
   - id: keycloak-url-must-encode-realm
     message: Realm path segments in Keycloak admin URLs must use encodeURIComponent
@@ -50,12 +53,21 @@ rules:
     pattern-either:
       - pattern: 'NagSuppressions.addResourceSuppressions(..., [{..., reason: "", ...}], ...)'
       - pattern: 'NagSuppressions.addStackSuppressions(..., [{..., reason: "", ...}], ...)'
+      - pattern: 'NagSuppressions.addResourceSuppressionsByPath(..., [{..., reason: "", ...}], ...)'
 
-  - id: no-http-only-keycloak-url
-    message: Keycloak admin URLs must use https
+  - id: no-http-only-auth-url
+    message: |
+      Authentication/authority URLs must use https. Plain http:// for OIDC or
+      auth endpoints is a critical security issue.
     severity: ERROR
-    languages: [typescript]
+    languages: [generic]
     paths:
       include:
-        - "cdk/lambda/keycloak-config/src/**"
-    pattern-regex: '"http://[^"]*\/realms\/'
+        - "cdk/**"
+      exclude:
+        - "**/node_modules/**"
+        - "**/cdk.out/**"
+        - "**/coverage/**"
+        - "**/*.test.ts"
+        - "**/test/**"
+    pattern-regex: '"http://[^"]*(\.well-known/openid-configuration|/oauth2/|/realms/|/auth/|/token)'
