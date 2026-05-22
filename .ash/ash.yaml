@@ -1,4 +1,138 @@
+# ASH (Automated Security Helper) configuration.
+#
+# Two-tier filtering model
+# ------------------------
+# Findings are suppressed in two ways, which operate at different stages:
+#
+#   1. Pre-scan path exclusion — the file is never scanned, no finding is
+#      generated. Configured per-scanner below.
+#   2. Post-scan suppression (`global_settings.suppressions`) — the scanner
+#      still runs and produces a finding, which is then filtered out during
+#      aggregation based on rule_id + file path. Useful when a specific rule
+#      is a known false positive on a specific file (e.g. detect-secrets on
+#      files containing literal placeholder credentials).
+#
+# Where path exclusions live per scanner
+# --------------------------------------
+#   Scanner         | Reads from                                       | Uses global exclude list?
+#   ----------------|--------------------------------------------------|--------------------------
+#   detect-secrets  | global_settings.ignore_paths (filters the        | Yes
+#                   |   scannable file list pre-scan)                  |
+#   checkov         | scanners.checkov.options.skip_path               | No — parameter is received
+#                   |                                                  |   but never applied
+#   semgrep         | scanners.semgrep.options.exclude                 | No — parameter is received
+#                   |                                                  |   but never applied
+#   npm-audit       | N/A — audits the npm dependency graph, not files |
+#   cdk-nag         | N/A — inspects synthesized CDK templates         |
+#
+# Additionally, `.ignore` at the repo root is consumed by ASH's file-discovery
+# step (automated_security_helper/utils/get_scan_set.py). Files excluded there
+# are removed from the scan-set before any scanner sees them, which affects
+# every scanner that receives a scan-set (currently detect-secrets).
+#
+# Pattern semantics
+# -----------------
+#   - global_settings.ignore_paths & .suppressions: matched by
+#     automated_security_helper.utils.suppression_matcher.file_path_matches.
+#     Patterns with `**` go through a custom recursive-glob matcher (so
+#     `**/cdk.out/**` matches files at any depth); patterns without `**` go
+#     through Python's fnmatch against the whole relative path (so plain
+#     `cdk.out/` does NOT match `cdk/cdk.out/foo.json`). Matching is
+#     case-insensitive on both sides.
+#   - .ignore: gitignore syntax via igittigitt. Anchored at the filesystem
+#     root because ASH calls it with base_path="/", so patterns without a
+#     leading `**/` won't match paths deep under the repo root. Always use
+#     `**/dirname/**` form.
+#   - scanners.checkov.options.skip_path: substring-matched as regex against
+#     the full path (checkov's `--skip-path` semantics).
+#   - scanners.semgrep.options.exclude: glob.
+#
+# ASH quoting patch (required for v3.2.1 through at least v3.5.2)
+# ---------------------------------------------------------------
+# ASH's checkov scanner plugin builds its `--skip-path=` argument with literal
+# double-quotes embedded in the value (e.g. `--skip-path="cdk.out"`). Because
+# there is no shell between Python and the child process, those quotes are
+# passed verbatim into argv and the downstream tool compiles a regex that
+# contains literal `"` characters — which never match a real path, so
+# exclusions silently fail.
+#
+# The workaround is `scripts/patch-ash-quoting-bug.py`, which rewrites the
+# affected plugin file to drop the embedded quotes. CI runs the patch
+# automatically after installing ASH; if you run ash locally, run the patch
+# once after install. The script is idempotent and creates a .bak backup.
+# An upstream PR is open against awslabs/automated-security-helper; remove
+# the patch (and the workflow step) once it ships.
+#
+# Maintenance notes
+# -----------------
+# For general build/cache directories, the primary exclusion lives in `.ignore`
+# (which hides it from the scan-set) and in each per-scanner list (checkov and
+# semgrep walk their target themselves and need their own lists).
+# `global_settings.ignore_paths` is reserved for cases that need either:
+#   - Detect-secrets post-scan filtering for files that re-enter the scan-set
+#     via ASH_INCLUSIONS (e.g. `cdk/cdk.out/*.template.json` is re-added by
+#     ASH's hardcoded `!**/*.template.json` rule).
+#   - Aggregation-time filtering for findings that should be dropped from the
+#     final report regardless of which scanner produced them.
+#
+# When adding a new build/cache dir exclusion:
+#   1. Add to .ignore (single source of truth for scan-set filtering).
+#   2. Add to scanners.checkov.options.skip_path.
+#   3. Add to scanners.semgrep.options.exclude.
+#
+# When adding a detect-secrets-specific or cross-scanner aggregation filter:
+#   Add to global_settings.ignore_paths.
+#
+# When suppressing a specific rule on a specific file:
+#   Add an entry to global_settings.suppressions with rule_id + path + reason.
+
+global_settings:
+  ignore_paths:
+    # Entries here serve detect-secrets (pre-scan scan-set filter) and the
+    # aggregation-time finding filter. Build/cache dirs are NOT listed here
+    # because `.ignore` + per-scanner lists already cover them; keeping only
+    # patterns with a unique role avoids three-place duplication.
+    - path: "**/cdk.out/**"
+      reason: "CDK synth output. Required here because ASH_INCLUSIONS' `!**/*.template.json` rule re-adds cdk.out/*.template.json to the scan-set; detect-secrets would otherwise find Base64 entropy strings in CFN templates."
+    - path: "**/cdk.context.json"
+      reason: "CDK context cache (AMI IDs, VPC lookups); gitignored"
+    - path: ".gitallowed"
+      reason: "git-secrets allowlist enumerates known-safe placeholder credentials"
+  suppressions:
+    # Each entry pairs a specific rule_id with a specific file so unrelated
+    # finding types in the same file would still be flagged.
+    - rule_id: "SECRET-SECRET-KEYWORD"
+      path: ".github/workflows/build-test-destroy.yml"
+      reason: "GitHub Actions reserved key `secrets: inherit`; the YAML keyword `secrets:` triggers the rule, not an actual secret value"
+    - rule_id: "SECRET-SECRET-KEYWORD"
+      path: "cdk/lambda/keycloak-config/test/aws-utils.test.ts"
+      reason: "Jest test fixtures: literal placeholders ('secret123', 'my-plain-password') and a fake secret ARN string"
+    - rule_id: "SECRET-SECRET-KEYWORD"
+      path: "cdk/lambda/keycloak-config/test/handler.test.ts"
+      reason: "Jest test fixture: literal placeholder password 'admin-pw' used to mock getAdminCredentials"
+    - rule_id: "SECRET-SECRET-KEYWORD"
+      path: "cdk/lambda/keycloak-config/test/index.test.ts"
+      reason: "Jest test fixture: literal placeholder password 'admin-pw' used to mock getAdminCredentials"
+    - rule_id: "SECRET-HEX-HIGH-ENTROPY-STRING"
+      path: "cdk/test/load-deployment.test.ts"
+      reason: "Test fixture string '12345678901a' exercising the invalid-format branch of validateAccountId"
+    - rule_id: "CKV_DOCKER_7"
+      path: "docker/Dockerfile"
+      reason: "BASE_IMAGE is a build-arg defaulting to public.ecr.aws/amazonlinux/amazonlinux:2023-minimal. Checkov flags any parameterized FROM tag because it cannot statically verify the default. The default is pinned to a versioned AL2023 minimal image."
+
 scanners:
+  # npm-audit is disabled: npm dependency vulnerabilities are already
+  # surfaced by GitHub's native Dependabot alerts and the dependency
+  # graph, so running `npm audit` through ASH would duplicate findings
+  # in the Code scanning tab.
+  npm-audit:
+    enabled: false
+  # bandit is disabled: the only Python file in this repo is an 82-line
+  # CI hook (.github/hooks/check-copyright.py) which is not deployed and
+  # has no network or secret handling. Re-enable if a Python lambda is
+  # added to cdk/lambda/.
+  bandit:
+    enabled: false
   semgrep:
     enabled: true
     options:
@@ -9,9 +143,20 @@ scanners:
       exclude:
         - "cdk.out/"
         - "dist/"
-        - ".bundle/"
-        - "node_modules/"
+        - "build/"
         - "coverage/"
+  checkov:
+    enabled: true
+    options:
+      skip_path:
+        - path: "cdk.out"
+          reason: "CDK synth output"
+        - path: "coverage"
+          reason: "Test coverage output"
+        - path: "cdk/dist"
+          reason: "CDK build output"
+        - path: "cdk/build"
+          reason: "CDK build output"
   syft:
     enabled: true
     options:

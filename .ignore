@@ -1,0 +1,34 @@
+# Paths excluded from ASH (Automated Security Helper) scans.
+# ASH discovers this file via get_scan_set.py and applies it as a pathspec
+# before any scanner runs, so excluded paths never reach individual scanners.
+#
+# Syntax is gitignore-style, using **/dirname/** form to unambiguously match
+# files inside the directory at any depth.
+#
+# NOTE: igittigitt's IgnoreParser is invoked by ASH's get_scan_set.py with
+# base_path="/", which anchors non-** patterns to the filesystem root. Patterns
+# without a leading **/ therefore only match /dirname/... (literal root) and
+# never match the actual repo path. Always prefix directory exclusions with
+# **/ unless you really mean "from repo root on disk".
+
+# Dependencies
+**/node_modules/**
+
+# Build output
+**/dist/**
+**/build/**
+
+# CDK
+**/cdk.out/**
+
+# Test / coverage caches
+**/coverage/**
+
+# TypeScript build info
+**/*.tsbuildinfo
+
+# ASH internal outputs and logs (scanning our own scan artifacts is noise)
+.ash/ash_output/**
+.ash/analyze_out.txt
+.ash/scan_out.txt
+.ash/validate_out.txt

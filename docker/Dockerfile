@@ -110,4 +110,11 @@ USER keycloak
 ENV KC_HOME=/opt/keycloak
 ENV PATH="${KC_HOME}/bin:${PATH}"
 
+# TCP probe against Keycloak's HTTP port. Uses bash's /dev/tcp pseudo-device
+# rather than curl/wget so the runtime image does not need an extra package.
+# The ALB target group checks /, but for local docker runs a TCP-open check
+# is sufficient to confirm Keycloak is listening.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+  CMD bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1
+
 ENTRYPOINT ["/opt/keycloak/entrypoint.sh"]
