@@ -34,6 +34,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Capture GitHub HEAD
+          GITHUB_HEAD=$(git rev-parse HEAD)
+
           # Fetch CodeCommit's current state (includes previous injection commits)
           git fetch codecommit mainline || true
 
@@ -43,12 +46,22 @@ jobs:
             git rebase -X theirs codecommit/mainline
           fi
 
+          # Reset cdk/ to GitHub HEAD's content (full replacement, not merge).
+          # Restoring from GitHub HEAD handles additions, deletions, and
+          # renames cleanly.
+          rm -rf cdk/
+          git checkout "$GITHUB_HEAD" -- cdk/
+
+          # Strip package-lock.json files.
+          find cdk -name 'package-lock.json' -delete
+
           # Inject Config from repo variable
           echo '${{ vars.CONFIG }}' > Config
 
           # Generate root package.json from cdk/package.json for mirror build.
-          # Lock file is removed so npm resolves from available registry versions
-          # rather than demanding exact versions that may not be mirrored yet.
+          # The build/test scripts below remove package-lock.json at build time
+          # so npm resolves against custom repository rather than demanding exact versions
+          # from npm registry.
           jq '{
             name: "${{ vars.MIRROR_PACKAGE_NAME }}",
             version: .version,
@@ -74,6 +87,7 @@ jobs:
           }' cdk/package.json > package.json
 
           git add Config package.json
+          git add -A cdk/
           git commit -m "chore: inject build config for mirror"
 
           # Push (fast-forward since we rebased on CodeCommit's mainline)
