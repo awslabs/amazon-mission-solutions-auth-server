@@ -3,6 +3,7 @@ name: Mirror to CodeCommit
 on:
   release:
     types: [published]
+  workflow_dispatch:  # Manual trigger: mirror current main HEAD (testing / recovery)
 
 # Default to read-only at the workflow level; jobs that need additional
 # permissions opt in explicitly via their own `permissions:` block.
@@ -34,23 +35,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Capture GitHub HEAD
-          GITHUB_HEAD=$(git rev-parse HEAD)
-
           # Fetch CodeCommit's current state (includes previous injection commits)
           git fetch codecommit mainline || true
 
-          # Rebase our branch on top of CodeCommit's mainline so the push is fast-forward.
-          # This places the previous injection commit(s) in our history.
+          # Merge mainline into GitHub HEAD with the "ours" strategy: keeps
+          # GitHub's tree verbatim while still descending from the remote tip,
+          # so the push is a fast-forward without a force push. A rebase would
+          # replay GitHub commits and hit modify/delete conflicts on stripped
+          # lock files, which "-X theirs" cannot resolve.
           if git rev-parse codecommit/mainline &>/dev/null; then
-            git rebase -X theirs codecommit/mainline
+            git merge -s ours --no-edit codecommit/mainline
           fi
-
-          # Reset cdk/ to GitHub HEAD's content (full replacement, not merge).
-          # Restoring from GitHub HEAD handles additions, deletions, and
-          # renames cleanly.
-          rm -rf cdk/
-          git checkout "$GITHUB_HEAD" -- cdk/
 
           # Strip package-lock.json files.
           find cdk -name 'package-lock.json' -delete
