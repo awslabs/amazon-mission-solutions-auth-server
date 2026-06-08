@@ -80,7 +80,8 @@ ARG KEYCLOAK_VERSION
 LABEL maintainer="Amazon Mission Solutions"
 LABEL keycloak.version="${KEYCLOAK_VERSION}"
 
-RUN dnf install -y \
+RUN dnf upgrade -y && \
+    dnf install -y \
       java-21-amazon-corretto-headless \
       hostname \
       shadow-utils && \
