@@ -206,6 +206,14 @@ export interface DataplaneProps {
    * @default "keycloak"
    */
   readonly projectName?: string;
+
+  /**
+   * Whether the KeycloakConfig construct should explicitly manage the Provider
+   * framework Lambda's log group. Set to false when an external mechanism
+   * (e.g. a CDK Aspect) manages log retention to avoid duplicate configuration.
+   * @default true
+   */
+  readonly manageProviderLogGroup?: boolean;
 }
 
 /**
@@ -452,6 +460,7 @@ export class Dataplane extends Construct {
         keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
         customAuthConfig: this.config.KEYCLOAK_AUTH_CONFIG,
         generateUserPasswords: true,
+        manageProviderLogGroup: props.manageProviderLogGroup,
       });
 
       // Scope dependency to the custom resource so the Lambda can destroy in parallel with the service
