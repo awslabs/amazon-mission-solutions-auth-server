@@ -101,7 +101,13 @@ jobs:
     needs:
       - deploy
       - get-aws-region
-    if: needs.deploy.result == 'success'
+    # `always() &&` is required, not cosmetic: deploy is gated with `if: always()`,
+    # and an `if` without a status-check function is implicitly ANDed with `success()`
+    # of all needs — which evaluates false when a dependency used always(), silently
+    # skipping this job even when deploy succeeded. Mirrors the destroy job below.
+    # Runs only on a real deploy success; auto-skips when deploy is skipped (doc-only
+    # PRs) or failed.
+    if: always() && needs.deploy.result == 'success'
     uses: ./.github/workflows/integ-test.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
