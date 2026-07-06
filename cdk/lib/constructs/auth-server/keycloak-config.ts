@@ -2,9 +2,9 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
 
 import { CustomResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { ISecurityGroup, IVpc, SubnetType } from 'aws-cdk-lib/aws-ec2';
@@ -201,7 +201,7 @@ export class KeycloakConfig extends Construct {
     });
 
     // Compute a hash of the auth config so CloudFormation triggers an Update
-    // whenever KEYCLOAK_AUTH_CONFIG changes. 
+    // whenever KEYCLOAK_AUTH_CONFIG changes.
     const configHash = authConfig
       ? createHash('sha256').update(JSON.stringify(authConfig)).digest('hex')
       : 'none';
