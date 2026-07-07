@@ -2,6 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -199,10 +200,19 @@ export class KeycloakConfig extends Construct {
       role: this.lambdaRoles.providerRole,
     });
 
+    // Compute a hash of the auth config so CloudFormation triggers an Update
+    // whenever KEYCLOAK_AUTH_CONFIG changes.
+    const configHash = authConfig
+      ? createHash('sha256').update(JSON.stringify(authConfig)).digest('hex')
+      : 'none';
+
     // Create the Custom Resource
     this.customResource = new CustomResource(this, 'CustomResource', {
       serviceToken: provider.serviceToken,
       resourceType: 'Custom::KeycloakConfig',
+      properties: {
+        configHash,
+      },
     });
 
     // CDK-NAG suppressions
