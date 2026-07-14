@@ -52,6 +52,8 @@ export interface KeycloakServiceProps {
   keycloakVersion?: string;
   /** Pre-built wrapper image URI. When set, skips Docker build and uses fromRegistry. */
   wrapperImage?: string;
+  /** Set up cross-account ECR repository access from ECS tasks */
+  wrapperImageRepositoryArn?: string;
   /** The task CPU units. */
   taskCpu?: number;
   /** The task memory in MiB. */
@@ -111,6 +113,7 @@ export class KeycloakService extends Construct {
       executionRoleName: `${projectName}-auth-execution-role`,
       existingTaskRole: props.existingTaskRole,
       existingExecutionRole: props.existingExecutionRole,
+      crossAccountRepositoryArn: props.wrapperImageRepositoryArn,
     });
 
     this.cluster = new Cluster(this, 'Cluster', {

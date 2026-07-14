@@ -31,6 +31,8 @@ export interface ECSRolesProps {
   readonly existingTaskRole?: IRole;
   /** Optional existing execution role to use instead of creating one. */
   readonly existingExecutionRole?: IRole;
+  /** Optional ECR repository ARN for cross-account access */
+  readonly crossAccountRepositoryArn?: string;
 }
 
 /**
@@ -113,6 +115,14 @@ export class ECSRoles extends Construct {
     });
 
     // ECR repository access for pulling images
+    const ecrPullResources = [
+      `arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
+    ];
+    if (props.crossAccountRepositoryArn) {
+      ecrPullResources.push(props.crossAccountRepositoryArn);
+    }
+
+    // ECR repository access for pulling images
     const ecrPolicyStatement = new PolicyStatement({
       sid: 'ECRPull',
       effect: Effect.ALLOW,
@@ -122,9 +132,7 @@ export class ECSRoles extends Construct {
         'ecr:BatchGetImage',
         'ecr:DescribeRepositories',
       ],
-      resources: [
-        `arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
-      ],
+      resources: ecrPullResources,
     });
 
     executionPolicy.addStatements(ecrAuthPolicyStatement, ecrPolicyStatement);
@@ -132,25 +140,31 @@ export class ECSRoles extends Construct {
     executionRole.addManagedPolicy(executionPolicy);
 
     // Add NAG suppressions for necessary wildcard permissions
-    NagSuppressions.addResourceSuppressions(
-      executionPolicy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason: 'ECR GetAuthorizationToken is an account-level operation requiring wildcard.',
-          appliesTo: ['Resource::*'],
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'ECR repository wildcard needed for pulling images from various repositories including public Keycloak images.',
-          appliesTo: [
-            `Resource::arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
-          ],
-        },
-      ],
-      true,
-    );
+    const nagSuppressions = [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason: 'ECR GetAuthorizationToken is an account-level operation requiring wildcard.',
+        appliesTo: ['Resource::*'],
+      },
+      {
+        id: 'AwsSolutions-IAM5',
+        reason:
+          'ECR repository wildcard needed for pulling images from various repositories including public Keycloak images.',
+        appliesTo: [
+          `Resource::arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
+        ],
+      },
+    ];
+
+    if (props.crossAccountRepositoryArn) {
+      nagSuppressions.push({
+        id: 'AwsSolutions-IAM5',
+        reason: 'Cross-account ECR repository ARN needed for pulling shared container images.',
+        appliesTo: [`Resource::${props.crossAccountRepositoryArn}`],
+      });
+    }
+
+    NagSuppressions.addResourceSuppressions(executionPolicy, nagSuppressions, true);
 
     return executionRole;
   }
