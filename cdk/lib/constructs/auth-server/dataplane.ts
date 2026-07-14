@@ -47,6 +47,12 @@ export class DataplaneConfig extends BaseConfig {
   KEYCLOAK_WRAPPER_IMAGE?: string;
 
   /**
+   * Grants access to the given ECR repository from ECS tasks for cross-account image access.
+   * @default undefined
+   */
+  KEYCLOAK_WRAPPER_REPOSITORY_ARN?: string;
+
+  /**
    * Keycloak admin username.
    * @default "keycloak"
    */
@@ -406,6 +412,7 @@ export class Dataplane extends Construct {
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
       keycloakVersion: this.config.KEYCLOAK_VERSION,
       wrapperImage: this.config.KEYCLOAK_WRAPPER_IMAGE,
+      wrapperImageRepositoryArn: this.config.KEYCLOAK_WRAPPER_REPOSITORY_ARN,
       taskCpu: this.config.ECS_TASK_CPU,
       taskMemory: this.config.ECS_TASK_MEMORY,
       minContainers: this.config.ECS_MIN_CONTAINERS,
