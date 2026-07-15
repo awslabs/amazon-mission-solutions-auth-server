@@ -11,7 +11,7 @@ import {
 import { ISecurityGroup, IVpc, Port, SecurityGroup } from 'aws-cdk-lib/aws-ec2';
 import { ARecord, HostedZone, IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
-import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
@@ -274,6 +274,11 @@ export class Dataplane extends Construct {
   public readonly certificate?: ICertificate;
 
   /**
+   * The secret containing the Keycloak admin credentials
+   */
+  public readonly adminSecret: ISecret;
+
+  /**
    * Creates a new Dataplane construct.
    *
    * @param scope - CDK scope
@@ -361,7 +366,7 @@ export class Dataplane extends Construct {
     }
 
     // Create Keycloak admin secret
-    const keycloakAdminSecret = new Secret(this, 'KeycloakAdminSecret', {
+    this.adminSecret = new Secret(this, 'KeycloakAdminSecret', {
       secretName: `${projectName}-auth/keycloak-admin`,
       description: `Admin credentials for ${projectName} Keycloak`,
       generateSecretString: {
@@ -375,7 +380,7 @@ export class Dataplane extends Construct {
       },
     });
 
-    NagSuppressions.addResourceSuppressions(keycloakAdminSecret, [
+    NagSuppressions.addResourceSuppressions(this.adminSecret, [
       {
         id: 'AwsSolutions-SMG4',
         reason:
@@ -408,7 +413,7 @@ export class Dataplane extends Construct {
       projectName: projectName,
       vpc: props.vpc,
       databaseSecret: this.database.databaseSecret,
-      keycloakSecret: keycloakAdminSecret,
+      keycloakSecret: this.adminSecret,
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
       keycloakVersion: this.config.KEYCLOAK_VERSION,
       wrapperImage: this.config.KEYCLOAK_WRAPPER_IMAGE,
@@ -461,7 +466,7 @@ export class Dataplane extends Construct {
       this.configLambda = new KeycloakConfig(this, 'KeycloakConfig', {
         account: props.account,
         projectName: projectName,
-        keycloakAdminSecret: keycloakAdminSecret,
+        keycloakAdminSecret: this.adminSecret,
         vpc: props.vpc,
         securityGroup: configLambdaSecurityGroup,
         keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
@@ -497,7 +502,7 @@ export class Dataplane extends Construct {
     });
 
     new CfnOutput(this, 'KeycloakAdminSecretArn', {
-      value: keycloakAdminSecret.secretArn,
+      value: this.adminSecret.secretArn,
       description: 'ARN of the Keycloak admin credentials secret',
       exportName: `${projectName}-KeycloakAdminSecretArn`,
     });
