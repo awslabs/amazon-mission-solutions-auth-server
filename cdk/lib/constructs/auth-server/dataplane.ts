@@ -152,6 +152,8 @@ export class DataplaneConfig extends BaseConfig {
     ENABLED?: boolean;
     /** Per-IP rate limit within a 5-minute window. @default 2000 */
     REQUESTS_PER_5_MIN?: number;
+    /** Optional version of the AWSManagedRulesKnownBadInputsRuleSet managed rule group. */
+    KNOWN_BAD_INPUTS_RULE_SET_VERSION?: string;
   };
 
   /**
@@ -436,6 +438,7 @@ export class Dataplane extends Construct {
         projectName,
         isProd,
         requestsPer5Min: this.config.DOMAIN_WAF?.REQUESTS_PER_5_MIN,
+        knownBadInputsRuleSetVersion: this.config.DOMAIN_WAF?.KNOWN_BAD_INPUTS_RULE_SET_VERSION,
       });
     }
 

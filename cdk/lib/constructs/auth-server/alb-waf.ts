@@ -17,6 +17,8 @@ export interface AlbWafProps {
   readonly isProd: boolean;
   /** Per-IP rate limit within a 5-minute sliding window. Default: 2000. */
   readonly requestsPer5Min?: number;
+  /** Optional version of the AWSManagedRulesKnownBadInputsRuleSet managed rule group. */
+  readonly knownBadInputsRuleSetVersion?: string;
 }
 
 /**
@@ -50,6 +52,9 @@ export class AlbWaf extends Construct {
             managedRuleGroupStatement: {
               vendorName: 'AWS',
               name: 'AWSManagedRulesKnownBadInputsRuleSet',
+              ...(props.knownBadInputsRuleSetVersion && {
+                version: props.knownBadInputsRuleSetVersion,
+              }),
             },
           },
           visibilityConfig: {
