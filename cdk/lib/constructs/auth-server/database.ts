@@ -17,7 +17,6 @@ import {
   Secret,
   SecretRotation,
   SecretRotationApplication,
-  SecretTargetAttachment,
 } from 'aws-cdk-lib/aws-secretsmanager';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { NagSuppressions } from 'cdk-nag';
@@ -132,11 +131,6 @@ export class Database extends Construct {
     );
 
     if (isProd) {
-      new SecretTargetAttachment(this, 'SecretAttachment', {
-        secret: databaseSecret,
-        target: this.databaseCluster,
-      });
-
       new SecretRotation(this, 'Rotation', {
         application: SecretRotationApplication.MYSQL_ROTATION_SINGLE_USER,
         secret: databaseSecret,
