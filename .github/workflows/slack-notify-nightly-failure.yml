@@ -6,6 +6,9 @@ on:
       run_url:
         required: true
         type: string
+    secrets:
+      SLACK_WEBHOOK:
+        required: true
 
 permissions:
   contents: read

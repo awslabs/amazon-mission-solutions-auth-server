@@ -23,13 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # No `secrets:` block: check-pending-workflow.yml uses only GITHUB_TOKEN, which is
+  # provided to reusable workflows automatically.
   check:
     uses: ./.github/workflows/check-pending-workflow.yml
-    secrets: inherit
 
+  # No `secrets:` block: cdk.yml declares no `on.workflow_call.secrets`.
   cdk-checks:
     uses: ./.github/workflows/cdk.yml
-    secrets: inherit
 
   check-doc-only:
     if: github.event_name == 'pull_request'
@@ -95,7 +96,10 @@ jobs:
     uses: ./.github/workflows/deploy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   integration-test:
     needs:
@@ -111,7 +115,10 @@ jobs:
     uses: ./.github/workflows/integ-test.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   destroy:
     if: always() && needs.deploy.result != 'skipped'
@@ -123,7 +130,10 @@ jobs:
     uses: ./.github/workflows/destroy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   notify-nightly-failure:
     if: failure() && github.event_name == 'schedule'
@@ -136,4 +146,5 @@ jobs:
     uses: ./.github/workflows/slack-notify-nightly-failure.yml
     with:
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

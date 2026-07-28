@@ -103,7 +103,7 @@ global_settings:
     # finding types in the same file would still be flagged.
     - rule_id: "SECRET-SECRET-KEYWORD"
       path: ".github/workflows/build-test-destroy.yml"
-      reason: "GitHub Actions reserved key `secrets: inherit`; the YAML keyword `secrets:` triggers the rule, not an actual secret value"
+      reason: "GitHub Actions reserved key `secrets:` on reusable-workflow calls; the YAML keyword and the `${{ secrets.NAME }}` references it maps trigger the rule, not actual secret values"
     - rule_id: "SECRET-SECRET-KEYWORD"
       path: "cdk/lambda/keycloak-config/test/aws-utils.test.ts"
       reason: "Jest test fixtures: literal placeholders ('secret123', 'my-plain-password') and a fake secret ARN string"
