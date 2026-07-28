@@ -99,4 +99,23 @@ describe('Database SSM Parameter Completeness', () => {
       { numRuns: 20 },
     );
   });
+
+  it('should create exactly one secret attachment for production databases', () => {
+    const stack = new Stack(undefined, 'TestProductionStack', {
+      env: { account: '123456789012', region: 'us-west-2' },
+    });
+    const vpc = new Vpc(stack, 'Vpc', { maxAzs: 2 });
+
+    new Database(stack, 'Database', {
+      vpc,
+      projectName: 'production-auth-server',
+      isProd: true,
+    });
+
+    const template = Template.fromStack(stack);
+
+    // Credentials.fromSecret creates the attachment required by the Aurora cluster.
+    // The Database construct must not create a second attachment for the same pair.
+    template.resourceCountIs('AWS::SecretsManager::SecretTargetAttachment', 1);
+  });
 });
