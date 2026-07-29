@@ -10,6 +10,12 @@ on:
       aws_region:
         required: true
         type: string
+      # See deploy.yml. Must match the SHA deploy used, or the tests run against a
+      # different tree than was deployed.
+      pr_ref:
+        required: false
+        type: string
+        default: ''
     secrets:
       AUTH_SERVER_ACCOUNT_ID:
         required: true
@@ -30,6 +36,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.pr_ref }}
+          # See deploy.yml.
+          allow-unsafe-pr-checkout: ${{ inputs.pr_ref != '' }}
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
         with:
