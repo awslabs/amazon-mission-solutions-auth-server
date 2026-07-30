@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 125
     steps:
       - name: Check for pending workflows
-        uses: ahmadnassri/action-workflow-queue@v1
+        uses: ahmadnassri/action-workflow-queue@542658b3a8270cac81ae15d401b0d974732808ac # v1.2.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           delay: 300000

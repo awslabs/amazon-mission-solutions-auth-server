@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Send nightly failure notification
-        uses: rtCamp/action-slack-notify@v2
+        uses: rtCamp/action-slack-notify@33ca3be66c6f378fe1610fd1d5258632dbed5e58 # v2.4.0
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           SLACK_TITLE: '${{ github.event.repository.name }} nightly build failed'
