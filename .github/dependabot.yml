@@ -1,0 +1,50 @@
+version: 2
+
+# Actions are pinned to commit SHAs, so version updates are the only thing
+# keeping them current: security updates fire only on a published advisory,
+# and every alert this repo has had was npm. Dependabot replaces the SHA and
+# rewrites the trailing `# vX.Y.Z` comment.
+updates:
+  - package-ecosystem: "github-actions"
+    # Covers .github/workflows plus .github/actions/*/action.yml.
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    # Default of 5 stalls further updates once reached.
+    open-pull-requests-limit: 15
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/cdk"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/cdk/lambda/keycloak-config"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "build"
+      include: "scope"

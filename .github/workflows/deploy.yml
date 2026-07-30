@@ -36,15 +36,14 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A SHA, never a branch name, which would re-resolve and could pick up a
           # commit pushed after approval.
           ref: ${{ inputs.pr_ref }}
-          # checkout >= v6.1.0 refuses fork-PR checkouts under pull_request_target
-          # without this. Ours is the gated case: the caller only supplies pr_ref after
-          # the safe-to-deploy label and fork-review approval. Stays false for
-          # same-repo events, where an empty ref skips the guard entirely.
+          # checkout refuses fork-PR checkouts under pull_request_target without this.
+          # Only true on the gated path: the caller supplies pr_ref after the
+          # safe-to-deploy label and fork-review approval.
           allow-unsafe-pr-checkout: ${{ inputs.pr_ref != '' }}
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
