@@ -29,7 +29,9 @@ import utils = require('./src/utils');
 exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<ProviderResponse> => {
   console.log('Event:', JSON.stringify(event));
 
-  const ssmPrefix = config.SSM_PREFIX;
+  // Extract per-invocation config from the Custom Resource properties.
+  const { ssmPrefix, keycloakAdminUsername, authConfig, userPasswordSecrets } =
+    config.loadFromEvent(event);
 
   // Read Keycloak URL and admin secret ARN from SSM at invocation time
   console.log(`Reading SSM parameters with prefix: ${ssmPrefix}`);
@@ -53,7 +55,10 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
   await healthCheck.waitForKeycloakHealth(keycloakUrl);
 
   // Get admin credentials from AWS Secrets Manager
-  const adminCredentials = await awsUtils.getAdminCredentials(adminSecretArn);
+  const adminCredentials = await awsUtils.getAdminCredentials(
+    adminSecretArn,
+    keycloakAdminUsername,
+  );
 
   // Get access token for API calls
   let accessToken: string;
@@ -68,16 +73,6 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
     console.error('Failed to log in after maximum retries:', error);
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Unable to log in to Keycloak after maximum retries: ${message}`);
-  }
-
-  // Get authentication configuration
-  const authConfig = config.getAuthConfig();
-
-  if (!authConfig) {
-    console.log('No authentication configuration found - Lambda should not have been invoked');
-    throw new Error(
-      'No authentication configuration available. Lambda should only run when auth-config.json exists.',
-    );
   }
 
   const realmName = authConfig.realm;
@@ -169,7 +164,10 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
   try {
     if (authConfig.users && authConfig.users.length > 0) {
       for (const user of authConfig.users) {
-        const userPassword = await awsUtils.getOrCreateUserPassword(user.username);
+        const userPassword = await awsUtils.getOrCreateUserPassword(
+          user.username,
+          userPasswordSecrets,
+        );
         await keycloakApi.createOrUpdateUser(
           accessToken,
           keycloakUrl,

@@ -20,6 +20,7 @@ import { BaseConfig, ConfigType, OSMLAccount } from '../types';
 import { AlbWaf } from './alb-waf';
 import { Database } from './database';
 import { KeycloakConfig } from './keycloak-config';
+import { KeycloakConfigLambda } from './keycloak-config-lambda';
 import { KeycloakService } from './keycloak-service';
 
 /**
@@ -260,9 +261,17 @@ export class Dataplane extends Construct {
   public readonly keycloakService: KeycloakService;
 
   /**
-   * The Keycloak configuration Lambda (only created if authConfig is provided).
+   * The shared Keycloak config Lambda infrastructure. Always created so
+   * additional {@link KeycloakConfig} Custom Resources (e.g. for extra
+   * realms) can be attached from outside this construct.
    */
-  public readonly configLambda?: KeycloakConfig;
+  public readonly keycloakConfigLambda: KeycloakConfigLambda;
+
+  /**
+   * The per-realm Keycloak configuration Custom Resource (only created if
+   * `KEYCLOAK_AUTH_CONFIG` is provided).
+   */
+  public readonly keycloakConfig?: KeycloakConfig;
 
   /**
    * The dataplane configuration used by this construct.
@@ -449,37 +458,37 @@ export class Dataplane extends Construct {
       'Allow MySQL connections from Keycloak service',
     );
 
-    // Conditionally create Keycloak config Lambda if KEYCLOAK_AUTH_CONFIG is provided
+    // Always provision the one-time Keycloak config Lambda infrastructure so
+    // additional per-realm KeycloakConfig Custom Resources can attach to it,
+    // regardless of whether a primary KEYCLOAK_AUTH_CONFIG was supplied.
+    const configLambdaSecurityGroup = new SecurityGroup(this, 'ConfigLambdaSecurityGroup', {
+      vpc: props.vpc,
+      description: `Security group for ${projectName} auth config Lambda`,
+      securityGroupName: `${projectName}-auth-config-lambda-sg`,
+    });
+
+    // Allow Lambda to reach the ALB on the appropriate port
+    const albPort = hostname && certificateArn ? 443 : 80;
+    this.keycloakService.loadBalancer.connections.allowFrom(
+      configLambdaSecurityGroup,
+      Port.tcp(albPort),
+      'Allow config Lambda to reach Keycloak ALB',
+    );
+
+    this.keycloakConfigLambda = new KeycloakConfigLambda(this, 'KeycloakConfigLambda', {
+      account: props.account,
+      projectName: projectName,
+      keycloakAdminSecret: this.adminSecret,
+      vpc: props.vpc,
+      securityGroup: configLambdaSecurityGroup,
+      keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
+      manageProviderLogGroup: props.manageProviderLogGroup,
+    });
+
+    // Conditionally create the per-realm Custom Resource that drives Keycloak
+    // config only when KEYCLOAK_AUTH_CONFIG is provided.
     if (this.config.KEYCLOAK_AUTH_CONFIG) {
-      // Create security group for the config Lambda
-      const configLambdaSecurityGroup = new SecurityGroup(this, 'ConfigLambdaSecurityGroup', {
-        vpc: props.vpc,
-        description: `Security group for ${projectName} auth config Lambda`,
-        securityGroupName: `${projectName}-auth-config-lambda-sg`,
-      });
-
-      // Allow Lambda to reach the ALB on the appropriate port
-      const albPort = hostname && certificateArn ? 443 : 80;
-      this.keycloakService.loadBalancer.connections.allowFrom(
-        configLambdaSecurityGroup,
-        Port.tcp(albPort),
-        'Allow config Lambda to reach Keycloak ALB',
-      );
-
-      this.configLambda = new KeycloakConfig(this, 'KeycloakConfig', {
-        account: props.account,
-        projectName: projectName,
-        keycloakAdminSecret: this.adminSecret,
-        vpc: props.vpc,
-        securityGroup: configLambdaSecurityGroup,
-        keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
-        customAuthConfig: this.config.KEYCLOAK_AUTH_CONFIG,
-        generateUserPasswords: true,
-        manageProviderLogGroup: props.manageProviderLogGroup,
-      });
-
-      // Scope dependency to the custom resource so the Lambda can destroy in parallel with the service
-      this.configLambda.customResource.node.addDependency(this.keycloakService);
+      this.keycloakConfig = this.addKeycloakAuthConfig(this.config.KEYCLOAK_AUTH_CONFIG);
     }
 
     // Create DNS A record if hosted zone is available
@@ -509,5 +518,33 @@ export class Dataplane extends Construct {
       description: 'ARN of the Keycloak admin credentials secret',
       exportName: `${projectName}-KeycloakAdminSecretArn`,
     });
+  }
+
+  /**
+   * Attach an additional Keycloak realm configuration to this Dataplane.
+   *
+   * The returned resource has a dependency on the Keycloak service so it
+   * waits for Keycloak to be reachable before running.
+   *
+   * @param config - The realm configuration to apply
+   * @param generateUserPasswords - Whether to generate password secrets for
+   *   users whose config sets `generatePassword: true`. Defaults to `true`.
+   * @returns The created KeycloakConfig construct
+   */
+  public addKeycloakAuthConfig(
+    config: KeycloakCustomConfig,
+    generateUserPasswords: boolean = true,
+  ): KeycloakConfig {
+    const keycloakConfig = new KeycloakConfig(this, `KeycloakConfig-${config.realm}`, {
+      keycloakConfigLambda: this.keycloakConfigLambda,
+      customAuthConfig: config,
+      generateUserPasswords,
+    });
+
+    // Scope dependency to the custom resource so the Lambda can destroy in
+    // parallel with the service.
+    keycloakConfig.customResource.node.addDependency(this.keycloakService);
+
+    return keycloakConfig;
   }
 }

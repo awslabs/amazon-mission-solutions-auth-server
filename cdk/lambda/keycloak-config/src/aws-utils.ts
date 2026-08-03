@@ -8,7 +8,6 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 
-import config = require('./config');
 import { AdminCredentials } from './types';
 
 // Create AWS SDK clients
@@ -35,9 +34,15 @@ async function getSSMParameter(name: string): Promise<string> {
 }
 
 /**
- * Retrieve the admin credentials from AWS Secrets Manager
+ * Retrieve the admin credentials from AWS Secrets Manager.
+ *
+ * @param secretArn ARN of the secret containing the admin credentials
+ * @param expectedAdminUsername username to compare against for a mismatch warning
  */
-async function getAdminCredentials(secretArn: string): Promise<AdminCredentials> {
+async function getAdminCredentials(
+  secretArn: string,
+  expectedAdminUsername: string,
+): Promise<AdminCredentials> {
   if (!secretArn) {
     throw new Error('Keycloak admin secret ARN is not provided');
   }
@@ -58,9 +63,9 @@ async function getAdminCredentials(secretArn: string): Promise<AdminCredentials>
     }
 
     // Verify that username matches expected admin username
-    if (secretObject.username !== config.KEYCLOAK_ADMIN_USERNAME) {
+    if (secretObject.username !== expectedAdminUsername) {
       console.warn(
-        `Username in secret (${secretObject.username}) does not match configured admin username (${config.KEYCLOAK_ADMIN_USERNAME}). Using secret value.`,
+        `Username in secret (${secretObject.username}) does not match configured admin username (${expectedAdminUsername}). Using secret value.`,
       );
     }
 
@@ -76,12 +81,15 @@ async function getAdminCredentials(secretArn: string): Promise<AdminCredentials>
 }
 
 /**
- * Get or create a user password from AWS Secrets Manager
+ * Get or create a user password from AWS Secrets Manager.
+ *
+ * @param username Keycloak username whose password to retrieve
+ * @param userPasswordSecrets map of Keycloak username to the ARN of its password secret
  */
-async function getOrCreateUserPassword(username: string): Promise<string> {
-  // Get the ARNs of user password secrets
-  const userPasswordSecrets = config.getUserPasswordSecrets();
-
+async function getOrCreateUserPassword(
+  username: string,
+  userPasswordSecrets: Record<string, string>,
+): Promise<string> {
   const secretArn = userPasswordSecrets[username];
   if (!secretArn) {
     throw new Error(`No secret ARN found for user: ${username}`);

@@ -2,9 +2,25 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-/** Configuration settings for Keycloak Lambda */
+/**
+ * Configuration for the Keycloak Config Lambda.
+ *
+ * Two categories of values:
+ *
+ * 1. Environment-only tunables (timeouts and retry limits) — read once at
+ *    module load time from environment variables.
+ *
+ * 2. Per-invocation configuration passed as `Custom::KeycloakConfig`
+ *    CloudFormation Custom Resource properties. `loadFromEvent(event)` returns
+ *    a normalized {@link ResourceConfig} for the handler to consume directly.
+ */
 
-import { KeycloakRealmConfig } from './types';
+import {
+  CloudFormationCustomResourceEvent,
+  KeycloakConfigResourceProperties,
+  KeycloakRealmConfig,
+  ResourceConfig,
+} from './types';
 
 /** Get environment variable with validation */
 function getEnvVar(
@@ -21,12 +37,8 @@ function getEnvVar(
   return value;
 }
 
-// Configuration from environment variables
-const config = {
-  SSM_PREFIX: getEnvVar('SSM_PREFIX', null, true) as string,
-  KEYCLOAK_ADMIN_USERNAME: getEnvVar('KEYCLOAK_ADMIN_USERNAME', 'keycloak') as string,
-  AUTH_CONFIG: getEnvVar('AUTH_CONFIG', '{}') as string,
-  USER_PASSWORD_SECRETS: getEnvVar('USER_PASSWORD_SECRETS', '{}') as string,
+// Environment-only configuration (timeouts, retry limits).
+const envConfig = {
   API_TIMEOUT_MS: parseInt(getEnvVar('API_TIMEOUT_MS', '30000') as string, 10),
 
   // Health check settings optimized for post-deployment readiness
@@ -37,40 +49,52 @@ const config = {
   API_RETRY_INTERVAL_MS: parseInt(getEnvVar('API_RETRY_INTERVAL_MS', '20000') as string, 10),
 };
 
-/** Parse auth config from environment variable */
-function getAuthConfig(): KeycloakRealmConfig | null {
-  if (!config.AUTH_CONFIG || config.AUTH_CONFIG === '{}') {
-    console.log('No custom authentication configuration provided. Using default configuration.');
-    return null;
+/**
+ * Extract normalized per-invocation configuration from the incoming
+ * CloudFormation Custom Resource event.
+ *
+ * The shape of `event.ResourceProperties` is a compile-time contract with the
+ * CDK `KeycloakConfig` construct — we cast rather than validate field-by-field.
+ *
+ * `AuthConfig` is transported as a JSON string to preserve primitive types
+ * (booleans, numbers) across the CloudFormation Custom Resource wire, which
+ * would otherwise stringify every leaf value. We parse it back to a real
+ * `KeycloakRealmConfig` here so downstream code sees `enabled: true` as a
+ * boolean rather than `"true"`.
+ */
+function loadFromEvent(event: CloudFormationCustomResourceEvent): ResourceConfig {
+  const props = event.ResourceProperties as unknown as KeycloakConfigResourceProperties;
+
+  if (!props.AuthConfig || typeof props.AuthConfig !== 'string') {
+    throw new Error('Missing required resource property: AuthConfig');
   }
 
+  let authConfig: KeycloakRealmConfig;
   try {
-    return JSON.parse(config.AUTH_CONFIG) as KeycloakRealmConfig;
+    authConfig = JSON.parse(props.AuthConfig) as KeycloakRealmConfig;
   } catch (error: unknown) {
-    console.error('Error parsing authentication configuration:', error);
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid authentication configuration: ${message}`);
-  }
-}
-
-/** Parse user password secrets from environment variable */
-function getUserPasswordSecrets(): Record<string, string> {
-  if (!config.USER_PASSWORD_SECRETS || config.USER_PASSWORD_SECRETS === '{}') {
-    console.log('No user password secrets provided.');
-    return {};
+    throw new Error(`Invalid resource property AuthConfig: not valid JSON (${message})`);
   }
 
-  try {
-    return JSON.parse(config.USER_PASSWORD_SECRETS) as Record<string, string>;
-  } catch (error: unknown) {
-    console.error('Error parsing user password secrets:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid user password secrets: ${message}`);
+  if (
+    !authConfig ||
+    typeof authConfig !== 'object' ||
+    Array.isArray(authConfig) ||
+    Object.keys(authConfig).length === 0
+  ) {
+    throw new Error('Missing required resource property: AuthConfig');
   }
+
+  return {
+    ssmPrefix: props.SsmPrefix,
+    keycloakAdminUsername: props.KeycloakAdminUsername ?? 'keycloak',
+    authConfig,
+    userPasswordSecrets: props.UserPasswordSecrets ?? {},
+  };
 }
 
 export = {
-  ...config,
-  getAuthConfig,
-  getUserPasswordSecrets,
+  ...envConfig,
+  loadFromEvent,
 };
