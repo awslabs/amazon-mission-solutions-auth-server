@@ -60,13 +60,19 @@ function setupHappyPath() {
     return Promise.reject(new Error(`Unknown SSM parameter: ${name}`));
   });
 
+  config.loadFromEvent.mockReturnValue({
+    ssmPrefix: '/test-project/auth',
+    keycloakAdminUsername: 'keycloak',
+    authConfig,
+    userPasswordSecrets: {},
+  });
+
   healthCheck.waitForKeycloakHealth.mockResolvedValue(true);
   awsUtils.getAdminCredentials.mockResolvedValue({
     username: 'admin',
     password: 'admin-pw',
   });
   keycloakApi.loginWithRetry.mockResolvedValue('access-token');
-  config.getAuthConfig.mockReturnValue(authConfig);
 
   // realm
   keycloakApi.createOrUpdateRealmWithConfig.mockResolvedValue(undefined);
@@ -132,6 +138,7 @@ describe('index handler (CloudFormation Custom Resource)', () => {
       await handler(createCfnEvent());
       expect(awsUtils.getAdminCredentials).toHaveBeenCalledWith(
         'arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-secret',
+        'keycloak',
       );
       expect(keycloakApi.loginWithRetry).toHaveBeenCalledWith(
         'https://auth.example.com',
@@ -198,12 +205,14 @@ describe('index handler (CloudFormation Custom Resource)', () => {
   });
 
   describe('error handling', () => {
-    test('throws when getAuthConfig returns null', async () => {
+    test('propagates errors from loadFromEvent (e.g. missing AuthConfig)', async () => {
       setupHappyPath();
-      config.getAuthConfig.mockReturnValue(null);
+      config.loadFromEvent.mockImplementation(() => {
+        throw new Error('Missing required resource property: AuthConfig');
+      });
 
       await expect(handler(createCfnEvent())).rejects.toThrow(
-        'No authentication configuration available',
+        'Missing required resource property: AuthConfig',
       );
     });
 
@@ -248,7 +257,6 @@ describe('index handler (CloudFormation Custom Resource)', () => {
     test('processes multiple clients in order', async () => {
       const authConfig = setupHappyPath();
       authConfig.clients = [{ clientId: 'c1' }, { clientId: 'c2' }];
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateClient).toHaveBeenCalledTimes(2);
@@ -258,7 +266,6 @@ describe('index handler (CloudFormation Custom Resource)', () => {
     test('skips when no clients defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.clients = undefined;
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       const result = await handler(createCfnEvent());
       expect(result.Status).toBe('SUCCESS');
@@ -277,17 +284,15 @@ describe('index handler (CloudFormation Custom Resource)', () => {
     test('calls getOrCreateUserPassword for each user', async () => {
       const authConfig = setupHappyPath();
       authConfig.users = [{ username: 'u1' }, { username: 'u2' }];
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       await handler(createCfnEvent());
-      expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u1');
-      expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u2');
+      expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u1', {});
+      expect(awsUtils.getOrCreateUserPassword).toHaveBeenCalledWith('u2', {});
     });
 
     test('skips when no users defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.users = undefined;
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateUser).not.toHaveBeenCalled();
@@ -305,7 +310,6 @@ describe('index handler (CloudFormation Custom Resource)', () => {
     test('processes roles from authConfig.roles.realm', async () => {
       const authConfig = setupHappyPath();
       authConfig.roles = { realm: [{ name: 'r1' }, { name: 'r2' }] };
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateRole).toHaveBeenCalledTimes(2);
@@ -315,7 +319,6 @@ describe('index handler (CloudFormation Custom Resource)', () => {
     test('skips when no roles defined', async () => {
       const authConfig = setupHappyPath();
       authConfig.roles = undefined;
-      config.getAuthConfig.mockReturnValue(authConfig);
 
       await handler(createCfnEvent());
       expect(keycloakApi.createOrUpdateRole).not.toHaveBeenCalled();

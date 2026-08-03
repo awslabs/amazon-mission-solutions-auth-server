@@ -62,6 +62,13 @@ function setupHappyPath() {
     roles: { realm: [{ name: 'my-role' }] },
   };
 
+  config.loadFromEvent.mockReturnValue({
+    ssmPrefix: '/test-project/auth',
+    keycloakAdminUsername: 'keycloak',
+    authConfig,
+    userPasswordSecrets: {},
+  });
+
   // SSM parameter reads
   awsUtils.getSSMParameter.mockImplementation((name: string) => {
     if (name.endsWith('/keycloak/url')) return Promise.resolve('https://auth.example.com');
@@ -76,7 +83,6 @@ function setupHappyPath() {
     password: 'admin-pw',
   });
   keycloakApi.loginWithRetry.mockResolvedValue('access-token');
-  config.getAuthConfig.mockReturnValue(authConfig);
 
   // realm
   keycloakApi.createOrUpdateRealmWithConfig.mockResolvedValue(undefined);
@@ -123,10 +129,12 @@ describe('CloudFormation Custom Resource Lambda handler', () => {
       expect(result.Data).toBeDefined();
     });
 
-    test('reads SSM parameters using SSM_PREFIX before processing', async () => {
+    test('reads SSM parameters using SsmPrefix from resource properties before processing', async () => {
       setupHappyPath();
-      await handler(createCfnEvent());
+      const event = createCfnEvent();
+      await handler(event);
 
+      expect(config.loadFromEvent).toHaveBeenCalledWith(event);
       expect(awsUtils.getSSMParameter).toHaveBeenCalledWith('/test-project/auth/keycloak/url');
       expect(awsUtils.getSSMParameter).toHaveBeenCalledWith(
         '/test-project/auth/keycloak/admin-secret-arn',
@@ -140,12 +148,13 @@ describe('CloudFormation Custom Resource Lambda handler', () => {
       expect(healthCheck.waitForKeycloakHealth).toHaveBeenCalledWith('https://auth.example.com');
     });
 
-    test('calls getAdminCredentials with the secret ARN from SSM', async () => {
+    test('calls getAdminCredentials with the secret ARN from SSM and expected admin username', async () => {
       setupHappyPath();
       await handler(createCfnEvent());
 
       expect(awsUtils.getAdminCredentials).toHaveBeenCalledWith(
         'arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-secret',
+        'keycloak',
       );
     });
 
@@ -266,12 +275,14 @@ describe('CloudFormation Custom Resource Lambda handler', () => {
       );
     });
 
-    test('throws when no auth config is available', async () => {
+    test('propagates errors from loadFromEvent (e.g. missing AuthConfig)', async () => {
       setupHappyPath();
-      config.getAuthConfig.mockReturnValue(null);
+      config.loadFromEvent.mockImplementation(() => {
+        throw new Error('Missing required resource property: AuthConfig');
+      });
 
       await expect(handler(createCfnEvent())).rejects.toThrow(
-        'No authentication configuration available',
+        'Missing required resource property: AuthConfig',
       );
     });
 

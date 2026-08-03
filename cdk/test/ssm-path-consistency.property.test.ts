@@ -6,10 +6,11 @@
  * Property-based test for SSM Path Consistency Between Writer and Reader (Lambda).
  *
  * **SSM Path Consistency Between Writer and Reader (Lambda)**
- * For any valid SSM_PREFIX value, the Config Lambda SHALL construct SSM parameter
- * paths `{SSM_PREFIX}/keycloak/url` and `{SSM_PREFIX}/keycloak/admin-secret-arn`
- * using the SSM_PREFIX environment variable, matching the paths written by the
- * KeycloakService construct.
+ * For any valid `SsmPrefix` value passed on the `Custom::KeycloakConfig` custom
+ * resource, the Config Lambda SHALL construct SSM parameter paths
+ * `{SsmPrefix}/keycloak/url` and `{SsmPrefix}/keycloak/admin-secret-arn` from
+ * that resource property, matching the paths written by the KeycloakService
+ * construct.
  */
 
 import { Stack } from 'aws-cdk-lib';
@@ -19,6 +20,7 @@ import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { assert, property, string } from 'fast-check';
 
 import { KeycloakConfig } from '../lib/constructs/auth-server/keycloak-config';
+import { KeycloakConfigLambda } from '../lib/constructs/auth-server/keycloak-config-lambda';
 import { KeycloakService } from '../lib/constructs/auth-server/keycloak-service';
 
 // Mock existsSync so the Lambda bundle check passes during synthesis
@@ -40,10 +42,11 @@ describe('SSM Path Consistency Between Writer and Reader (Lambda)', () => {
   /**
    * For any valid projectName, the SSM parameter paths written by KeycloakService
    * (`/{projectName}/auth/keycloak/url` and `/{projectName}/auth/keycloak/admin-secret-arn`)
-   * match the paths the Lambda constructs from its SSM_PREFIX environment variable
-   * (`{SSM_PREFIX}/keycloak/url` and `{SSM_PREFIX}/keycloak/admin-secret-arn`).
+   * match the paths the Lambda constructs from the `SsmPrefix` property passed
+   * on the `Custom::KeycloakConfig` custom resource
+   * (`{SsmPrefix}/keycloak/url` and `{SsmPrefix}/keycloak/admin-secret-arn`).
    */
-  it('should ensure Lambda SSM_PREFIX + suffixes match the SSM paths written by KeycloakService for any projectName', () => {
+  it('should ensure custom resource SsmPrefix + suffixes match the SSM paths written by KeycloakService for any projectName', () => {
     assert(
       property(projectNameArb, (projectName: string) => {
         const account = '123456789012';
@@ -85,7 +88,7 @@ describe('SSM Path Consistency Between Writer and Reader (Lambda)', () => {
         expect(writtenSsmParams).toContain(expectedUrlPath);
         expect(writtenSsmParams).toContain(expectedSecretArnPath);
 
-        // --- Synthesize KeycloakConfig to extract Lambda SSM_PREFIX env var ---
+        // --- Synthesize KeycloakConfig to extract SsmPrefix from the custom resource ---
         const configStack = new Stack(undefined, 'ConfigStack', {
           env: { account, region },
         });
@@ -93,12 +96,16 @@ describe('SSM Path Consistency Between Writer and Reader (Lambda)', () => {
         const configSg = new SecurityGroup(configStack, 'SG', { vpc: configVpc });
         const configSecret = new Secret(configStack, 'AdminSecret');
 
-        new KeycloakConfig(configStack, 'KeycloakConfig', {
+        const keycloakConfigLambda = new KeycloakConfigLambda(configStack, 'KeycloakConfigLambda', {
           account: { id: account, region, prodLike: false, isAdc: false },
           vpc: configVpc,
           securityGroup: configSg,
           keycloakAdminSecret: configSecret,
           projectName,
+        });
+
+        new KeycloakConfig(configStack, 'KeycloakConfig', {
+          keycloakConfigLambda,
         });
 
         const configTemplate = Template.fromStack(configStack);
@@ -107,27 +114,22 @@ describe('SSM Path Consistency Between Writer and Reader (Lambda)', () => {
           Record<string, unknown>
         >;
 
-        // Find the Lambda function resource and extract SSM_PREFIX env var
-        const lambdaFunctions = Object.entries(configResources).filter(
-          ([, resource]) => resource.Type === 'AWS::Lambda::Function',
+        // Find the Custom::KeycloakConfig custom resource and extract SsmPrefix
+        const customResources = Object.entries(configResources).filter(
+          ([, resource]) => resource.Type === 'Custom::KeycloakConfig',
         );
-        expect(lambdaFunctions.length).toBeGreaterThanOrEqual(1);
+        expect(customResources.length).toBe(1);
 
-        const [, lambdaResource] = lambdaFunctions[0];
-        const lambdaProps = lambdaResource.Properties as Record<string, unknown>;
-        const envVars = (lambdaProps.Environment as Record<string, unknown>).Variables as Record<
-          string,
-          string
-        >;
-
-        const ssmPrefix = envVars.SSM_PREFIX;
+        const [, customResource] = customResources[0];
+        const customResourceProps = customResource.Properties as Record<string, unknown>;
+        const ssmPrefix = customResourceProps.SsmPrefix as string;
         expect(ssmPrefix).toBeDefined();
 
-        // Verify the Lambda's SSM_PREFIX matches the expected prefix
+        // Verify the custom resource's SsmPrefix matches the expected prefix
         expect(ssmPrefix).toBe(expectedPrefix);
 
-        // Verify that SSM_PREFIX + suffixes match the paths written by KeycloakService
-        // This is the core property: the reader constructs the same paths the writer creates
+        // Verify that SsmPrefix + suffixes match the paths written by KeycloakService.
+        // This is the core property: the reader constructs the same paths the writer creates.
         const lambdaUrlPath = `${ssmPrefix}/keycloak/url`;
         const lambdaSecretArnPath = `${ssmPrefix}/keycloak/admin-secret-arn`;
 

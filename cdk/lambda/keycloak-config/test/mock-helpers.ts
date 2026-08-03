@@ -10,25 +10,34 @@
  * are consistent and easy to override.
  */
 
-import { AppConfig } from '../src/types';
+import { AppConfig, ResourceConfig } from '../src/types';
 
 export interface ConfigMock extends AppConfig {
   [key: string]: unknown;
 }
 
+/**
+ * Build a default ResourceConfig for tests. Individual tests can override
+ * fields and pass this as the return value from `config.loadFromEvent`.
+ */
+export function createResourceConfig(overrides: Partial<ResourceConfig> = {}): ResourceConfig {
+  return {
+    ssmPrefix: '/test-project/auth',
+    keycloakAdminUsername: 'keycloak',
+    authConfig: { realm: 'test-realm' },
+    userPasswordSecrets: {},
+    ...overrides,
+  };
+}
+
 export function createConfigMock(overrides: Partial<ConfigMock> = {}): ConfigMock {
   return {
-    SSM_PREFIX: '/test-project/auth',
-    KEYCLOAK_ADMIN_USERNAME: 'keycloak',
-    AUTH_CONFIG: '{}',
-    USER_PASSWORD_SECRETS: '{}',
     API_TIMEOUT_MS: 5000,
     HEALTH_CHECK_MAX_ATTEMPTS: 3,
     HEALTH_CHECK_INTERVAL_MS: 100,
     API_MAX_RETRIES: 3,
     API_RETRY_INTERVAL_MS: 100,
-    getAuthConfig: jest.fn(),
-    getUserPasswordSecrets: jest.fn(),
+    loadFromEvent: jest.fn().mockReturnValue(createResourceConfig()),
     ...overrides,
   };
 }
