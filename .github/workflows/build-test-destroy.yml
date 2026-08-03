@@ -1,11 +1,36 @@
 name: Validate
 
+# Fork PRs get an empty secrets context on `pull_request`, so they can be built and
+# tested but never deployed. `pull_request_target` runs in the base-repo context where
+# secrets exist, which is the only way to give a fork real deploy coverage — and is
+# dangerous, so it is gated behind the safe-to-deploy label plus fork-review approval.
+#
+#   Event               | origin    | code checks | deploy
+#   --------------------|-----------|-------------|--------------------------
+#   pull_request        | same-repo | yes         | yes
+#   pull_request        | fork      | yes         | no (no secrets exist)
+#   pull_request_target | same-repo | no          | no (pull_request owns it)
+#   pull_request_target | fork      | no          | yes, after label + approval
+#   schedule            | n/a       | yes         | yes
+#   workflow_dispatch   | n/a       | yes         | yes
+#
+# Approving fork-review runs the fork's code with real deploy credentials (npm ci
+# postinstall, cdk deploy). Review the whole diff, lockfiles included.
+
 on:
   schedule:
     - cron: '0 3 * * *'
   pull_request:
     branches:
       - main
+  # `labeled` only: fork-unlabel burns the label after each use, so synchronize could
+  # only ever produce no-op runs, and a push during a pending approval would queue a
+  # second approval request.
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - labeled
   workflow_dispatch:
 
 env:
@@ -19,17 +44,28 @@ permissions:
   security-events: write
 
 concurrency:
-  group: validate-${{ github.ref }}
+  # Fork runs key on PR number: under pull_request_target github.ref is the base ref
+  # (refs/heads/main), which would share the nightly's group — and a group keeps only
+  # one pending run and cancels the rest, so a fork run could cancel the nightly.
+  group: validate-${{ github.event_name == 'pull_request_target' && format('fork-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # Serializes deploys across runs (one shared AWS account). Skipped on fork
+  # pull_request runs, which never deploy; the fork path uses check-after-approval.
   check:
+    if: |
+      github.event_name != 'pull_request_target' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/check-pending-workflow.yml
-    secrets: inherit
 
+  # Skipped under pull_request_target, and load-bearing: cdk.yml runs `npm ci`
+  # (arbitrary postinstall) and builds the tree, which must not execute fork code with
+  # a privileged GITHUB_TOKEN before approval. Fork code is checked on the
+  # pull_request event instead, where no secrets exist.
   cdk-checks:
+    if: github.event_name != 'pull_request_target'
     uses: ./.github/workflows/cdk.yml
-    secrets: inherit
 
   check-doc-only:
     if: github.event_name == 'pull_request'
@@ -37,8 +73,8 @@ jobs:
     outputs:
       deploy_relevant: ${{ steps.filter.outputs.deploy }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         id: filter
         with:
           filters: |
@@ -60,14 +96,12 @@ jobs:
         run: |
           echo "Using AWS Region: ${{ env.AWS_REGION }}"
 
-  # Manual approval gate for Dependabot PRs. Dependabot runs only receive secrets
-  # from the Dependabot secrets store, so deploy/integration-test/destroy can run
-  # on dependency-bump PRs — but that executes the just-bumped third-party code with
-  # account-level deploy credentials. This job pauses such runs (via the
-  # dependabot-review environment's required reviewers) until a maintainer reviews
-  # the diff and approves. It is skipped for human PRs and the nightly schedule, so
-  # their behavior is unchanged. Note: only this no-op job references the environment,
-  # which keeps deploy.yml's OIDC subject claim (and thus the IAM trust policy) intact.
+  # Dependabot runs do receive secrets (from the Dependabot store), so a dependency
+  # bump could deploy just-bumped third-party code with account credentials. Pause
+  # until a maintainer approves. Skipped for human PRs and the nightly schedule.
+  #
+  # A no-op job so the environment reference does not change deploy.yml's OIDC subject
+  # claim (and thus the IAM trust policy). Same for fork-gate below.
   dependabot-gate:
     needs:
       - check
@@ -79,6 +113,56 @@ jobs:
       - name: Maintainer approved Dependabot deploy
         run: echo "Maintainer approved. Proceeding with deploy / integration-test / destroy."
 
+  # The only thing between untrusted code and AWS credentials on the fork path.
+  # Matches github.event.label.name (the label just added) rather than the PR's label
+  # set, because adding any label fires this event — testing the set would let an
+  # unrelated label start a second credentialed run.
+  #
+  # No `needs`: cdk-checks is skipped in this run, and the reviewer sees the
+  # pull_request run's build/test results on the PR when deciding.
+  fork-gate:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      github.event.label.name == 'safe-to-deploy'
+    runs-on: ubuntu-latest
+    environment: fork-review
+    steps:
+      - name: Maintainer approved fork deploy
+        run: |
+          echo "Maintainer approved fork PR #${{ github.event.pull_request.number }}."
+          echo "Proceeding with deploy / integration-test / destroy at ${{ github.event.pull_request.head.sha }}."
+
+  # Burns the label once the gate is consumed, so a later push to the same fork branch
+  # cannot reuse this approval.
+  fork-unlabel:
+    needs:
+      - fork-gate
+    if: always() && needs.fork-gate.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove safe-to-deploy label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Via env, never interpolated into the script body: fork-controlled values
+          # must not reach a shell as code.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABEL: safe-to-deploy
+        run: |
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${LABEL}" \
+            --silent || echo "Label already absent; nothing to remove."
+
+  # Serialization for the fork path. `check` cannot cover it: approval may sit pending
+  # for hours, by which time a slot claimed beforehand has expired.
+  check-after-approval:
+    needs:
+      - fork-gate
+    if: always() && github.event_name == 'pull_request_target' && needs.fork-gate.result == 'success'
+    uses: ./.github/workflows/check-pending-workflow.yml
+
   deploy:
     needs:
       - check
@@ -86,32 +170,58 @@ jobs:
       - check-doc-only
       - get-aws-region
       - dependabot-gate
+      - fork-gate
+      - check-after-approval
+    # Two mutually exclusive routes in: every event resolves through the first, only an
+    # approved fork PR through the second.
     if: |
       always() &&
-      needs.check.result == 'success' &&
-      needs.cdk-checks.result == 'success' &&
+      (
+        (
+          github.event_name != 'pull_request_target' &&
+          needs.check.result == 'success' &&
+          needs.cdk-checks.result == 'success' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        ) ||
+        (
+          github.event_name == 'pull_request_target' &&
+          needs.fork-gate.result == 'success' &&
+          needs.check-after-approval.result == 'success'
+        )
+      ) &&
       (needs.dependabot-gate.result == 'success' || needs.dependabot-gate.result == 'skipped') &&
       (needs.check-doc-only.result == 'skipped' || needs.check-doc-only.outputs.deploy_relevant == 'true')
     uses: ./.github/workflows/deploy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+      # Empty for every non-fork event, leaving checkout on its default ref. The fork
+      # path pins the reviewed commit, since pull_request_target would otherwise check
+      # out the base branch and validate nothing.
+      pr_ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   integration-test:
     needs:
       - deploy
       - get-aws-region
-    # `always() &&` is required, not cosmetic: deploy is gated with `if: always()`,
-    # and an `if` without a status-check function is implicitly ANDed with `success()`
-    # of all needs — which evaluates false when a dependency used always(), silently
-    # skipping this job even when deploy succeeded. Mirrors the destroy job below.
-    # Runs only on a real deploy success; auto-skips when deploy is skipped (doc-only
-    # PRs) or failed.
+      # Implied via deploy; declared directly because CodeQL's untrusted-checkout
+      # analysis only walks one level up the needs graph.
+      - fork-gate
+    # `always() &&` is required, not cosmetic: an `if` without a status-check function
+    # is implicitly ANDed with success() of all needs, which is false when a dependency
+    # used always() — silently skipping this job even when deploy succeeded.
     if: always() && needs.deploy.result == 'success'
     uses: ./.github/workflows/integ-test.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+      pr_ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   destroy:
     if: always() && needs.deploy.result != 'skipped'
@@ -120,10 +230,18 @@ jobs:
       - deploy
       - integration-test
       - get-aws-region
+      # See integration-test.
+      - fork-gate
     uses: ./.github/workflows/destroy.yml
     with:
       aws_region: ${{ needs.get-aws-region.outputs.aws_region }}
-    secrets: inherit
+      # Same SHA as deploy: tearing down a different tree can orphan stacks if the PR
+      # changed stack names.
+      pr_ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
+    secrets:
+      AUTH_SERVER_ACCOUNT_ID: ${{ secrets.AUTH_SERVER_ACCOUNT_ID }}
+      DOMAIN_HOSTED_ZONE_ID: ${{ secrets.DOMAIN_HOSTED_ZONE_ID }}
+      DOMAIN_HOSTED_ZONE_NAME: ${{ secrets.DOMAIN_HOSTED_ZONE_NAME }}
 
   notify-nightly-failure:
     if: failure() && github.event_name == 'schedule'
@@ -136,4 +254,5 @@ jobs:
     uses: ./.github/workflows/slack-notify-nightly-failure.yml
     with:
       run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}

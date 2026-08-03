@@ -10,6 +10,13 @@ on:
       aws_region:
         required: true
         type: string
+      # Commit SHA to check out. Empty leaves checkout on the triggering ref, which is
+      # correct for every same-repo event; the fork path sets it because
+      # pull_request_target otherwise resolves to the base branch.
+      pr_ref:
+        required: false
+        type: string
+        default: ''
     secrets:
       AUTH_SERVER_ACCOUNT_ID:
         required: true
@@ -29,7 +36,15 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A SHA, never a branch name, which would re-resolve and could pick up a
+          # commit pushed after approval.
+          ref: ${{ inputs.pr_ref }}
+          # checkout refuses fork-PR checkouts under pull_request_target without this.
+          # Only true on the gated path: the caller supplies pr_ref after the
+          # safe-to-deploy label and fork-review approval.
+          allow-unsafe-pr-checkout: ${{ inputs.pr_ref != '' }}
       - name: Setup AWS OIDC
         uses: ./.github/actions/setup-aws-oidc
         with:

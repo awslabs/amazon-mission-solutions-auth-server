@@ -13,16 +13,16 @@
   "author": "Amazon Web Services",
   "license": "Apache-2.0",
   "dependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.993.0",
-    "@aws-sdk/client-ssm": "^3.993.0",
-    "axios": "^1.18.0"
+    "@aws-sdk/client-secrets-manager": "^3.1094.0",
+    "@aws-sdk/client-ssm": "^3.1094.0",
+    "axios": "^1.18.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^24.1.0",
     "eslint": "^9.39.1",
-    "jest": "^30.0.5",
-    "ts-jest": "^29.4.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.8.3"
   }
 }
