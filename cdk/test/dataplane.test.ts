@@ -306,19 +306,6 @@ describe('Dataplane construct', () => {
   });
 
   describe('Conditional config Lambda creation', () => {
-    test('does not create config Lambda when KEYCLOAK_AUTH_CONFIG is not provided', () => {
-      const dataplane = new Dataplane(stack, 'Dataplane', {
-        account: createTestAccount(),
-        vpc,
-        securityGroup,
-        config: new DataplaneConfig({
-          DOMAIN_INTERNET_FACING: false,
-        }),
-      });
-
-      expect(dataplane.configLambda).toBeUndefined();
-    });
-
     test('creates config Lambda when KEYCLOAK_AUTH_CONFIG is provided', () => {
       const dataplane = new Dataplane(stack, 'Dataplane', {
         account: createTestAccount(),
@@ -330,7 +317,7 @@ describe('Dataplane construct', () => {
         }),
       });
 
-      expect(dataplane.configLambda).toBeDefined();
+      expect(dataplane.keycloakConfigLambda).toBeDefined();
 
       const template = Template.fromStack(stack);
 
@@ -353,7 +340,7 @@ describe('Dataplane construct', () => {
       });
 
       // Only the custom resource (not the whole construct) depends on the service
-      const customResourceDeps = dataplane.configLambda!.customResource.node.dependencies;
+      const customResourceDeps = dataplane.keycloakConfig!.customResource.node.dependencies;
       expect(customResourceDeps.length).toBeGreaterThan(0);
     });
   });
@@ -1180,15 +1167,6 @@ describe('KeycloakConfig custom resource architecture', () => {
 
   test('Lambda environment has SSM_PREFIX instead of KEYCLOAK_URL/KEYCLOAK_ADMIN_SECRET_ARN', () => {
     const template = Template.fromStack(stack);
-
-    // Verify SSM_PREFIX is set
-    template.hasResourceProperties('AWS::Lambda::Function', {
-      Environment: Match.objectLike({
-        Variables: Match.objectLike({
-          SSM_PREFIX: Match.stringLikeRegexp('.*/auth'),
-        }),
-      }),
-    });
 
     // Verify KEYCLOAK_URL and KEYCLOAK_ADMIN_SECRET_ARN are NOT in the environment
     const resources = template.toJSON().Resources as Record<string, Record<string, unknown>>;

@@ -203,23 +203,13 @@ describe('AuthServerStack', () => {
         vpc: testVpc,
       });
 
-      expect(stack.dataplane.configLambda).toBeDefined();
+      expect(stack.dataplane.keycloakConfigLambda).toBeDefined();
 
       const template = Template.fromStack(stack);
       // Should have Lambda function for Keycloak config
       template.hasResourceProperties('AWS::Lambda::Function', {
         Runtime: Match.stringLikeRegexp('nodejs.*'),
       });
-    });
-
-    test('does not create Keycloak config Lambda when KEYCLOAK_AUTH_CONFIG is not provided', () => {
-      const stack = new AuthServerStack(app, 'TestAuthServerStack', {
-        env: { account: '123456789012', region: 'us-west-2' },
-        deployment: createTestDeploymentConfig(),
-        vpc: testVpc,
-      });
-
-      expect(stack.dataplane.configLambda).toBeUndefined();
     });
   });
 

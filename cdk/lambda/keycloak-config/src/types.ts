@@ -24,6 +24,38 @@ export interface CloudFormationCustomResourceEvent {
   OldResourceProperties?: Record<string, unknown>;
 }
 
+/**
+ * Shape of the properties supplied on the `Custom::KeycloakConfig` CloudFormation
+ * Custom Resource.
+ *
+ * `AuthConfig` is transported as a JSON-encoded string (not a nested object)
+ * to preserve primitive types across the CloudFormation Custom Resource wire.
+ * CloudFormation stringifies every primitive leaf value inside
+ * `ResourceProperties` before delivering the event to the Lambda, which would
+ * turn booleans like `enabled: true` into `"true"` and silently break
+ * strict-equality validation. Serializing the whole subtree preserves types
+ * end-to-end, then `loadFromEvent` parses it back to a real
+ * {@link KeycloakRealmConfig}.
+ */
+export interface KeycloakConfigResourceProperties {
+  ServiceToken: string; // Injected by the CloudFormation Provider framework
+  SsmPrefix: string;
+  KeycloakAdminUsername?: string;
+  AuthConfig: string;
+  UserPasswordSecrets?: Record<string, string>;
+}
+
+/**
+ * Normalized per-invocation configuration derived from the Custom Resource
+ * properties
+ */
+export interface ResourceConfig {
+  ssmPrefix: string;
+  keycloakAdminUsername: string;
+  authConfig: KeycloakRealmConfig;
+  userPasswordSecrets: Record<string, string>;
+}
+
 /** Response returned by the Lambda handler for the Provider framework. */
 export interface ProviderResponse {
   Status: 'SUCCESS' | 'FAILED';
@@ -32,22 +64,28 @@ export interface ProviderResponse {
   Reason?: string;
 }
 
-/** Runtime configuration loaded from environment variables. */
+/**
+ * Runtime configuration for the Keycloak Config Lambda.
+ *
+ * Environment-only tunables (timeouts and retry limits) are loaded once at
+ * module load time. Per-invocation values are extracted from the incoming
+ * CloudFormation Custom Resource event via `loadFromEvent`, which returns a
+ * normalized {@link ResourceConfig} the handler holds for the duration of the
+ * invocation.
+ */
 export interface AppConfig {
-  SSM_PREFIX: string;
-  KEYCLOAK_ADMIN_USERNAME: string;
-  AUTH_CONFIG: string;
-  USER_PASSWORD_SECRETS: string;
+  // Environment-only tunables.
   API_TIMEOUT_MS: number;
   HEALTH_CHECK_MAX_ATTEMPTS: number;
   HEALTH_CHECK_INTERVAL_MS: number;
   API_MAX_RETRIES: number;
   API_RETRY_INTERVAL_MS: number;
-  getAuthConfig: () => KeycloakRealmConfig | null;
-  getUserPasswordSecrets: () => Record<string, string>;
+
+  /** Extract normalized per-invocation config from the incoming CFN event. */
+  loadFromEvent: (event: CloudFormationCustomResourceEvent) => ResourceConfig;
 }
 
-/** Parsed Keycloak realm configuration from AUTH_CONFIG env var. */
+/** Parsed Keycloak realm configuration from the AuthConfig resource property. */
 export interface KeycloakRealmConfig {
   realm: string;
   enabled?: boolean;
