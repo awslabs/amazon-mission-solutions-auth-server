@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
+import { CfnOutput, RemovalPolicy, Validations } from 'aws-cdk-lib';
 import {
   Certificate,
   CertificateValidation,
@@ -12,7 +12,6 @@ import { ISecurityGroup, IVpc, Port, SecurityGroup } from 'aws-cdk-lib/aws-ec2';
 import { ARecord, HostedZone, IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { KeycloakCustomConfig } from '../../utils/keycloak-config-loader';
@@ -391,13 +390,11 @@ export class Dataplane extends Construct {
       },
     });
 
-    NagSuppressions.addResourceSuppressions(this.adminSecret, [
-      {
-        id: 'AwsSolutions-SMG4',
-        reason:
-          'Keycloak admin secret rotation is not configured. The admin password is set at initial deployment and managed manually.',
-      },
-    ]);
+    Validations.of(this.adminSecret).acknowledge({
+      id: 'AwsSolutions-SMG4',
+      reason:
+        'Keycloak admin secret rotation is not configured. The admin password is set at initial deployment and managed manually.',
+    });
 
     const databasePort = this.config.DATABASE_PORT ?? 3306;
 

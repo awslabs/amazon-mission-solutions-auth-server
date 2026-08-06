@@ -2,8 +2,8 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { App, Aspects, Stack } from 'aws-cdk-lib';
-import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { App, Stack, Validations } from 'aws-cdk-lib';
+import { Match, Template } from 'aws-cdk-lib/assertions';
 import { SecurityGroup, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { AwsSolutionsChecks } from 'cdk-nag';
 
@@ -14,7 +14,9 @@ import {
   createTestDeploymentConfig,
   createTestEnvironment,
   createTestVpc,
+  findNagViolations,
   generateNagReport,
+  NagFinding,
 } from './test-utils';
 
 describe('AuthServerStack', () => {
@@ -314,6 +316,9 @@ describe('AuthServerStack', () => {
 describe('cdk-nag Compliance Checks - AuthServerStack', () => {
   let stack: AuthServerStack;
 
+  let nagErrors: NagFinding[];
+  let nagWarnings: NagFinding[];
+
   beforeAll(() => {
     const app = createTestApp();
     const env = createTestEnvironment();
@@ -344,32 +349,20 @@ describe('cdk-nag Compliance Checks - AuthServerStack', () => {
       vpc: testVpc,
     });
 
-    Aspects.of(stack).add(new AwsSolutionsChecks({ verbose: true }));
+    Validations.of(app).addPlugins(
+      new AwsSolutionsChecks(app, { verbose: true, writeSuppressionsToCloudFormation: true }),
+    );
 
-    const errors = Annotations.fromStack(stack).findError(
-      '*',
-      Match.stringLikeRegexp('AwsSolutions-.*'),
-    );
-    const warnings = Annotations.fromStack(stack).findWarning(
-      '*',
-      Match.stringLikeRegexp('AwsSolutions-.*'),
-    );
-    generateNagReport(stack, errors, warnings);
+    nagErrors = findNagViolations(app, 'NagAuthServerStack', 'error');
+    nagWarnings = findNagViolations(app, 'NagAuthServerStack', 'warning');
+    generateNagReport(stack, nagErrors, nagWarnings);
   });
 
-  test('No unsuppressed Errors', () => {
-    const errors = Annotations.fromStack(stack).findError(
-      '*',
-      Match.stringLikeRegexp('AwsSolutions-.*'),
-    );
-    expect(errors).toHaveLength(0);
+  test('No unacknowledged Errors', () => {
+    expect(nagErrors).toHaveLength(0);
   });
 
-  test('No unsuppressed Warnings', () => {
-    const warnings = Annotations.fromStack(stack).findWarning(
-      '*',
-      Match.stringLikeRegexp('AwsSolutions-.*'),
-    );
-    expect(warnings).toHaveLength(0);
+  test('No unacknowledged Warnings', () => {
+    expect(nagWarnings).toHaveLength(0);
   });
 });

@@ -2,9 +2,8 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { CustomResource, RemovalPolicy } from 'aws-cdk-lib';
+import { CustomResource, RemovalPolicy, Validations } from 'aws-cdk-lib';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { KeycloakCustomConfig } from '../../utils/keycloak-config-loader';
@@ -94,15 +93,13 @@ export class KeycloakConfig extends Construct {
       },
     });
 
-    // CDK-NAG suppressions for per-user password secrets.
+    // CDK-NAG acknowledgments for per-user password secrets.
     this.userPasswordSecrets.forEach(secret => {
-      NagSuppressions.addResourceSuppressions(secret, [
-        {
-          id: 'AwsSolutions-SMG4',
-          reason:
-            'User password secrets are generated at deployment time for Keycloak user provisioning. Rotation is not applicable as passwords are managed through Keycloak.',
-        },
-      ]);
+      Validations.of(secret).acknowledge({
+        id: 'AwsSolutions-SMG4',
+        reason:
+          'User password secrets are generated at deployment time for Keycloak user provisioning. Rotation is not applicable as passwords are managed through Keycloak.',
+      });
     });
   }
 }

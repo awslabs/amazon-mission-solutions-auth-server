@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import { IVpc, Peer, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import {
   Cluster,
@@ -27,7 +27,6 @@ import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 import { join } from 'path';
 
@@ -328,14 +327,15 @@ export class KeycloakService extends Construct {
     // Write Keycloak SSM parameters for downstream discovery
     this.writeSSMParameters(projectName, this.keycloakUrl, props.keycloakSecret.secretArn);
 
-    // Grant ECS task role ssm:GetParameter scoped to database prefix
+    // Grant ECS task role ssm:GetParameter scoped to database prefix. Built from
+    // literal partition/region/account (not stack tokens) so the resulting cdk-nag
+    // finding name is token-free and can be acknowledged granularly below.
+    const databaseParamsArn = `arn:${this.ecsRoles.partition}:ssm:${props.account.region}:${props.account.id}:parameter/${projectName}/auth/database/*`;
     this.ecsRoles.taskRole.addToPrincipalPolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ssm:GetParameter'],
-        resources: [
-          `arn:${Stack.of(this).partition}:ssm:${Stack.of(this).region}:${Stack.of(this).account}:parameter/${projectName}/auth/database/*`,
-        ],
+        resources: [databaseParamsArn],
       }),
     );
 
@@ -348,71 +348,59 @@ export class KeycloakService extends Construct {
       }),
     );
 
-    // CDK-NAG suppressions
-    NagSuppressions.addResourceSuppressions(taskDef, [
-      {
-        id: 'AwsSolutions-ECS2',
-        reason:
-          'Environment variables contain non-sensitive Keycloak configuration (database host, ports, cache config). Sensitive values are injected via ECS secrets from Secrets Manager.',
-      },
-    ]);
+    this.acknowledgeNagFindings(taskDef, accessLogBucket, internetFacing, databaseParamsArn);
+  }
 
-    NagSuppressions.addResourceSuppressions(
-      this.loadBalancer,
-      [
-        {
-          id: 'AwsSolutions-EC23',
-          reason: internetFacing
-            ? 'The ALB security group allows inbound access from 0.0.0.0/0 to serve authentication traffic. Access is restricted to HTTP/HTTPS ports only.'
-            : 'When internal, access is restricted to VPC CIDR via allowFrom; cdk-nag cannot validate token-based CIDR (vpc.vpcCidrBlock) and throws CdkNagValidationFailure.',
-        },
-      ],
-      true,
-    );
+  /**
+   * Acknowledges the cdk-nag findings this construct knowingly accepts.
+   *
+   * IAM5 is a granular rule: each finding is named with the offending permission
+   * (e.g. 'AwsSolutions-IAM5[Resource::*]') and the acknowledgment id must match that
+   * exact name. Each ack below therefore accepts only the named wildcard — any new
+   * wildcard added to these roles will fail validation.
+   */
+  private acknowledgeNagFindings(
+    taskDef: FargateTaskDefinition,
+    accessLogBucket: Bucket,
+    internetFacing: boolean,
+    databaseParamsArn: string,
+  ): void {
+    Validations.of(taskDef).acknowledge({
+      id: 'AwsSolutions-ECS2',
+      reason:
+        'Environment variables contain non-sensitive Keycloak configuration (database host, ports, cache config). Sensitive values are injected via ECS secrets from Secrets Manager.',
+    });
 
-    NagSuppressions.addResourceSuppressions(accessLogBucket, [
-      {
-        id: 'AwsSolutions-S1',
-        reason:
-          'This is the ALB access logging destination bucket. Enabling server access logging on it would create an infinite logging loop.',
-      },
-    ]);
+    Validations.of(this.loadBalancer).acknowledge({
+      id: 'AwsSolutions-EC23',
+      reason: internetFacing
+        ? 'The ALB security group allows inbound access from 0.0.0.0/0 to serve authentication traffic. Access is restricted to HTTP/HTTPS ports only.'
+        : 'When internal, access is restricted to VPC CIDR via allowFrom; cdk-nag cannot validate token-based CIDR (vpc.vpcCidrBlock) and throws CdkNagValidationFailure.',
+    });
 
-    NagSuppressions.addResourceSuppressions(
-      this.ecsRoles.taskRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'SSM GetParameter uses a wildcard suffix on the database parameter prefix (/{projectName}/auth/database/*) to allow reading all database connection parameters. This is scoped to the minimum required prefix.',
-          appliesTo: [
-            {
-              regex: '/^Resource::arn:.*:ssm:.*:parameter/.*/auth/database/\\*$/g',
-            },
-          ],
-        },
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'rds:DescribeDBClusters is a read-only describe operation used by the container entrypoint to check database readiness before starting Keycloak. RDS does not support resource-level permissions for this action.',
-          appliesTo: ['Resource::*'],
-        },
-      ],
-      true,
-    );
+    Validations.of(accessLogBucket).acknowledge({
+      id: 'AwsSolutions-S1',
+      reason:
+        'This is the ALB access logging destination bucket. Enabling server access logging on it would create an infinite logging loop.',
+    });
 
-    NagSuppressions.addResourceSuppressions(
-      this.ecsRoles.executionRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'The execution role DefaultPolicy is created by CDK when ContainerImage.fromAsset grants ECR push/pull permissions and Secrets Manager grants read access. These wildcards are CDK-managed.',
-          appliesTo: ['Resource::*'],
-        },
-      ],
-      true,
-    );
+    Validations.of(this.ecsRoles.taskRole).acknowledge({
+      id: `AwsSolutions-IAM5[Resource::${databaseParamsArn}]`,
+      reason:
+        'SSM GetParameter uses a wildcard suffix on the database parameter prefix (/{projectName}/auth/database/*) to allow reading all database connection parameters. This is scoped to the minimum required prefix.',
+    });
+
+    Validations.of(this.ecsRoles.taskRole).acknowledge({
+      id: 'AwsSolutions-IAM5[Resource::*]',
+      reason:
+        'rds:DescribeDBClusters is a read-only describe operation used by the container entrypoint to check database readiness before starting Keycloak. RDS does not support resource-level permissions for this action.',
+    });
+
+    Validations.of(this.ecsRoles.executionRole).acknowledge({
+      id: 'AwsSolutions-IAM5[Resource::*]',
+      reason:
+        'ecr:GetAuthorizationToken is an account-level operation that does not support resource-level permissions. Every other statement in the execution role DefaultPolicy (Secrets Manager reads, log writes, ECR pulls) is scoped to specific resource ARNs.',
+    });
   }
 
   /**

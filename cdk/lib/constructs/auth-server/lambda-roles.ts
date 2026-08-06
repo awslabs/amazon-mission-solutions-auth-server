@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { region_info } from 'aws-cdk-lib';
+import { region_info, Validations } from 'aws-cdk-lib';
 import {
   Effect,
   IRole,
@@ -11,7 +11,6 @@ import {
   Role,
   ServicePrincipal,
 } from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { OSMLAccount } from '../types';
@@ -101,19 +100,12 @@ export class LambdaRoles extends Construct {
 
     role.addManagedPolicy(policy);
 
-    // Add NAG suppressions
-    NagSuppressions.addResourceSuppressions(
-      policy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
-          appliesTo: ['Resource::*'],
-        },
-      ],
-      true,
-    );
+    // The id carries the granular finding suffix, so only this wildcard is accepted.
+    Validations.of(policy).acknowledge({
+      id: 'AwsSolutions-IAM5[Resource::*]',
+      reason:
+        'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
+    });
 
     return role;
   }
@@ -153,19 +145,12 @@ export class LambdaRoles extends Construct {
 
     role.addManagedPolicy(policy);
 
-    // Add NAG suppressions
-    NagSuppressions.addResourceSuppressions(
-      policy,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
-          appliesTo: ['Resource::*'],
-        },
-      ],
-      true,
-    );
+    // The id carries the granular finding suffix, so only this wildcard is accepted.
+    Validations.of(policy).acknowledge({
+      id: 'AwsSolutions-IAM5[Resource::*]',
+      reason:
+        'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
+    });
 
     return role;
   }

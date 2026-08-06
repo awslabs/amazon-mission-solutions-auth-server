@@ -10,7 +10,6 @@ import { App, Environment, Stack } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { FlowLogDestination, FlowLogTrafficType, Vpc } from 'aws-cdk-lib/aws-ec2';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
-import { SynthesisMessage } from 'aws-cdk-lib/cx-api';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -94,6 +93,75 @@ export interface NagFinding {
   resource: string;
   details: string;
   rule: string;
+}
+
+/**
+ * Shape of the `validation-report.json` cdk-nag writes into the cloud assembly.
+ *
+ * cdk-nag runs as an IPolicyValidationPlugin, so violations surface in this report —
+ * not as synthesis Annotations.
+ */
+interface ValidationReport {
+  pluginReports?: {
+    pluginName: string;
+    conclusion: string;
+    violations: {
+      ruleName: string;
+      severity: string;
+      violatingConstructs: { constructPath: string }[];
+    }[];
+  }[];
+}
+
+/**
+ * Synthesizes an app and returns the cdk-nag violations for a given stack.
+ *
+ * cdk-nag emits no synthesis Annotations, so `Annotations.fromStack(...)` always comes
+ * back empty and an assertion built on it would pass without checking anything. This
+ * helper reads the validation report instead.
+ *
+ * A fully acknowledged synthesis writes `pluginReports: []` rather than an entry with
+ * a success conclusion, so an absent plugin report means "no violations".
+ *
+ * @param app - The app to synthesize
+ * @param stackName - Name of the stack whose violations should be returned
+ * @param severity - Which severity to filter for
+ * @returns Findings for that stack, one per violating construct
+ */
+export function findNagViolations(
+  app: App,
+  stackName: string,
+  severity: 'error' | 'warning',
+): NagFinding[] {
+  const assembly = app.synth({ force: true });
+  const reportPath = join(assembly.directory, 'validation-report.json');
+  if (!existsSync(reportPath)) {
+    return [];
+  }
+
+  const report = JSON.parse(readFileSync(reportPath, 'utf-8')) as ValidationReport;
+  const findings: NagFinding[] = [];
+
+  for (const plugin of report.pluginReports ?? []) {
+    for (const violation of plugin.violations) {
+      if (violation.severity !== severity) {
+        continue;
+      }
+      for (const construct of violation.violatingConstructs) {
+        // constructPath is prefixed with the stack name, e.g. 'MyStack/Bucket/Resource'.
+        if (construct.constructPath.split('/')[0] !== stackName) {
+          continue;
+        }
+        findings.push({
+          rule: violation.ruleName,
+          resource: construct.constructPath,
+          details: violation.ruleName,
+        });
+      }
+    }
+  }
+
+  return findings;
 }
 
 /**
@@ -184,34 +252,9 @@ export function extractSuppressedViolations(stack: Stack): SuppressedNagViolatio
  */
 export function generateNagReport(
   stack: Stack,
-  errors: SynthesisMessage[],
-  warnings: SynthesisMessage[],
+  errors: NagFinding[],
+  warnings: NagFinding[],
 ): void {
-  const formatFindings = (findings: SynthesisMessage[]): NagFinding[] => {
-    const regex = /(AwsSolutions-[A-Za-z0-9]+)\[([^\]]+)]:\s*(.+)/;
-    return findings.map(finding => {
-      const data =
-        typeof finding.entry.data === 'string'
-          ? finding.entry.data
-          : JSON.stringify(finding.entry.data);
-      const match = data.match(regex);
-      if (!match) {
-        return {
-          rule: '',
-          resource: '',
-          details: '',
-        };
-      }
-      return {
-        rule: match[1],
-        resource: match[2],
-        details: match[3],
-      };
-    });
-  };
-
-  const errorFindings = formatFindings(errors);
-  const warningFindings = formatFindings(warnings);
   const suppressedViolations = extractSuppressedViolations(stack);
 
   appendStackSuppressionsToReport(stack, suppressedViolations);
@@ -220,22 +263,22 @@ export function generateNagReport(
   process.stdout.write(`Stack: ${stack.stackName}\n`);
   process.stdout.write(`Generated: ${new Date().toISOString()}\n`);
   process.stdout.write('\n=============== Summary ===============\n');
-  process.stdout.write(`Total Errors: ${errorFindings.length}\n`);
-  process.stdout.write(`Total Warnings: ${warningFindings.length}\n`);
+  process.stdout.write(`Total Errors: ${errors.length}\n`);
+  process.stdout.write(`Total Warnings: ${warnings.length}\n`);
   process.stdout.write(`Total Suppressed: ${suppressedViolations.length}\n`);
 
-  if (errorFindings.length > 0) {
+  if (errors.length > 0) {
     process.stdout.write('\n=============== Errors ===============\n');
-    errorFindings.forEach(finding => {
+    errors.forEach(finding => {
       process.stdout.write(`\n${finding.resource}\n`);
       process.stdout.write(`${finding.rule}\n`);
       process.stdout.write(`${finding.details}\n`);
     });
   }
 
-  if (warningFindings.length > 0) {
+  if (warnings.length > 0) {
     process.stdout.write('\n=============== Warnings ===============\n');
-    warningFindings.forEach(finding => {
+    warnings.forEach(finding => {
       process.stdout.write(`\n${finding.resource}\n`);
       process.stdout.write(`${finding.rule}\n`);
       process.stdout.write(`${finding.details}\n`);

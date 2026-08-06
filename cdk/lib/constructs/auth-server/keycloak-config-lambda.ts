@@ -5,14 +5,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import { ISecurityGroup, IVpc, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import { Effect, IRole, PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { CfnFunction, Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Provider } from 'aws-cdk-lib/custom-resources';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { OSMLAccount } from '../types';
@@ -133,16 +132,16 @@ export class KeycloakConfigLambda extends Construct {
     // Grant admin secret read to the Lambda role
     props.keycloakAdminSecret.grantRead(this.lambdaRoles.configLambdaRole);
 
-    // Grant Lambda role ssm:GetParameter scoped to /{projectName}/auth/keycloak/*
-    const stack = Stack.of(this);
+    // Grant Lambda role ssm:GetParameter scoped to /{projectName}/auth/keycloak/*.
+    // Built from literal partition/region/account (not stack tokens) so the resulting
+    // cdk-nag finding name is token-free and can be acknowledged granularly below.
+    const keycloakParamsArn = `arn:${this.lambdaRoles.partition}:ssm:${props.account.region}:${props.account.id}:parameter${this.ssmPrefix}/keycloak/*`;
     this.lambdaRoles.configLambdaRole.addToPrincipalPolicy(
       new PolicyStatement({
         sid: 'SSMGetKeycloakParams',
         effect: Effect.ALLOW,
         actions: ['ssm:GetParameter'],
-        resources: [
-          `arn:${stack.partition}:ssm:${stack.region}:${stack.account}:parameter${this.ssmPrefix}/keycloak/*`,
-        ],
+        resources: [keycloakParamsArn],
       }),
     );
 
@@ -164,47 +163,39 @@ export class KeycloakConfigLambda extends Construct {
       role: this.lambdaRoles.providerRole,
     });
 
-    // CDK-NAG suppressions
-    NagSuppressions.addResourceSuppressions(
-      this.lambdaRoles.configLambdaRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'SSM GetParameter uses a wildcard suffix on the keycloak parameter prefix (/{projectName}/auth/keycloak/*) to allow reading keycloak URL and admin secret ARN. This is scoped to the minimum required prefix.',
-          appliesTo: [
-            {
-              regex: '/^Resource::arn:.*:ssm:.*:parameter/.*/auth/keycloak/\\*$/g',
-            },
-          ],
-        },
-      ],
-      true,
-    );
+    this.acknowledgeNagFindings(keycloakParamsArn);
+  }
 
-    // Provider framework NAG suppressions
-    NagSuppressions.addResourceSuppressions(
-      this.provider,
-      [
-        {
-          id: 'AwsSolutions-L1',
-          reason:
-            'The Provider framework Lambda runtime is managed by CDK and may not use the latest runtime version.',
-        },
-      ],
-      true,
-    );
+  /**
+   * Acknowledges the cdk-nag findings this construct knowingly accepts.
+   *
+   * IAM5 is a granular rule: each finding is named with the offending permission and
+   * the acknowledgment id must match that exact name, so each ack below accepts only
+   * the named wildcard. Any new wildcard added to these roles fails validation.
+   */
+  private acknowledgeNagFindings(keycloakParamsArn: string): void {
+    Validations.of(this.lambdaRoles.configLambdaRole).acknowledge({
+      id: `AwsSolutions-IAM5[Resource::${keycloakParamsArn}]`,
+      reason:
+        'SSM GetParameter uses a wildcard suffix on the keycloak parameter prefix (/{projectName}/auth/keycloak/*) to allow reading keycloak URL and admin secret ARN. This is scoped to the minimum required prefix.',
+    });
 
-    NagSuppressions.addResourceSuppressions(
-      this.lambdaRoles.providerRole,
-      [
-        {
-          id: 'AwsSolutions-IAM5',
-          reason:
-            'Provider role requires permissions to invoke the config Lambda and write logs. Wildcard is scoped to the provider log group.',
-        },
-      ],
-      true,
+    Validations.of(this.provider).acknowledge({
+      id: 'AwsSolutions-L1',
+      reason:
+        'The Provider framework Lambda runtime is managed by CDK and may not use the latest runtime version.',
+    });
+
+    // grantInvoke on the config function produces '<FnLogicalId>.Arn:*' — the ':*'
+    // covers the function's version/alias qualifiers, which is how the CDK Provider
+    // framework grants invoke.
+    const configFnLogicalId = Stack.of(this).getLogicalId(
+      this.configFunction.node.defaultChild as CfnFunction,
     );
+    Validations.of(this.lambdaRoles.providerRole).acknowledge({
+      id: `AwsSolutions-IAM5[Resource::<${configFnLogicalId}.Arn>:*]`,
+      reason:
+        'The Provider framework grants invoke on the config Lambda including its version/alias qualifiers. This is scoped to that single function.',
+    });
   }
 }

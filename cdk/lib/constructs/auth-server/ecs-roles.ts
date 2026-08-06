@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { region_info } from 'aws-cdk-lib';
+import { region_info, Validations } from 'aws-cdk-lib';
 import {
   CompositePrincipal,
   Effect,
@@ -12,7 +12,6 @@ import {
   Role,
   ServicePrincipal,
 } from 'aws-cdk-lib/aws-iam';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 import { OSMLAccount } from '../types';
@@ -139,32 +138,28 @@ export class ECSRoles extends Construct {
 
     executionRole.addManagedPolicy(executionPolicy);
 
-    // Add NAG suppressions for necessary wildcard permissions
-    const nagSuppressions = [
+    // Acknowledge the granular IAM5 findings for necessary wildcard permissions. Each id
+    // carries the finding suffix, so only the named wildcard is accepted.
+    const acknowledgements = [
       {
-        id: 'AwsSolutions-IAM5',
+        id: 'AwsSolutions-IAM5[Resource::*]',
         reason: 'ECR GetAuthorizationToken is an account-level operation requiring wildcard.',
-        appliesTo: ['Resource::*'],
       },
       {
-        id: 'AwsSolutions-IAM5',
+        id: `AwsSolutions-IAM5[Resource::arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*]`,
         reason:
           'ECR repository wildcard needed for pulling images from various repositories including public Keycloak images.',
-        appliesTo: [
-          `Resource::arn:${this.partition}:ecr:${props.account.region}:${props.account.id}:repository/*`,
-        ],
       },
     ];
 
     if (props.crossAccountRepositoryArn) {
-      nagSuppressions.push({
-        id: 'AwsSolutions-IAM5',
+      acknowledgements.push({
+        id: `AwsSolutions-IAM5[Resource::${props.crossAccountRepositoryArn}]`,
         reason: 'Cross-account ECR repository ARN needed for pulling shared container images.',
-        appliesTo: [`Resource::${props.crossAccountRepositoryArn}`],
       });
     }
 
-    NagSuppressions.addResourceSuppressions(executionPolicy, nagSuppressions, true);
+    acknowledgements.forEach(ack => Validations.of(executionPolicy).acknowledge(ack));
 
     return executionRole;
   }
