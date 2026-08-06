@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { Duration, RemovalPolicy } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Validations } from 'aws-cdk-lib';
 import { InstanceType, IVpc, Port, SecurityGroup, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import {
   AuroraMysqlEngineVersion,
@@ -19,7 +19,6 @@ import {
   SecretRotationApplication,
 } from 'aws-cdk-lib/aws-secretsmanager';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
-import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 export interface DatabaseProps {
@@ -140,27 +139,23 @@ export class Database extends Construct {
         automaticallyAfter: Duration.days(30),
       });
     } else {
-      NagSuppressions.addResourceSuppressions(databaseSecret, [
-        {
-          id: 'AwsSolutions-SMG4',
-          reason:
-            'Secret rotation is only enabled for production environments. Non-prod environments are frequently torn down and do not require automatic rotation.',
-        },
-      ]);
+      Validations.of(databaseSecret).acknowledge({
+        id: 'AwsSolutions-SMG4',
+        reason:
+          'Secret rotation is only enabled for production environments. Non-prod environments are frequently torn down and do not require automatic rotation.',
+      });
     }
 
-    NagSuppressions.addResourceSuppressions(this.databaseCluster, [
-      {
-        id: 'AwsSolutions-RDS6',
-        reason:
-          'Keycloak uses password-based authentication to connect to the database; IAM database authentication is not supported by the application.',
-      },
-      {
-        id: 'AwsSolutions-RDS10',
-        reason:
-          'Deletion protection is conditionally enabled based on the prodLike flag. Non-prod environments intentionally disable it for easier teardown.',
-      },
-    ]);
+    Validations.of(this.databaseCluster).acknowledge({
+      id: 'AwsSolutions-RDS6',
+      reason:
+        'Keycloak uses password-based authentication to connect to the database; IAM database authentication is not supported by the application.',
+    });
+    Validations.of(this.databaseCluster).acknowledge({
+      id: 'AwsSolutions-RDS10',
+      reason:
+        'Deletion protection is conditionally enabled based on the prodLike flag. Non-prod environments intentionally disable it for easier teardown.',
+    });
 
     this.writeSSMParameters(projectName);
   }
