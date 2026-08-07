@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1094.0",
-    "@eslint/js": "^9.39.1",
+    "@eslint/js": "^10.0.1",
     "@types/babel__core": "^7.20.5",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.1",
