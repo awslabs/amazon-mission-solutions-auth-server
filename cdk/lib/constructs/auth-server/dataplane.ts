@@ -9,6 +9,7 @@ import {
   ICertificate,
 } from 'aws-cdk-lib/aws-certificatemanager';
 import { ISecurityGroup, IVpc, Port, SecurityGroup } from 'aws-cdk-lib/aws-ec2';
+import { ILayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { ARecord, HostedZone, IHostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { ISecret, Secret } from 'aws-cdk-lib/aws-secretsmanager';
@@ -208,6 +209,29 @@ export interface DataplaneProps {
    * If not provided, defaults will be used.
    */
   readonly config?: DataplaneConfig;
+
+  /**
+   * Optional Lambda layers for the Keycloak config Lambda, e.g. a private
+   * certificate authority bundle. Pair with
+   * {@link DataplaneProps.configLambdaEnvironment} to set
+   * `NODE_EXTRA_CA_CERTS`.
+   */
+  readonly configLambdaLayers?: ILayerVersion[];
+
+  /**
+   * Optional additional environment variables for the Keycloak config
+   * Lambda (e.g. `NODE_EXTRA_CA_CERTS` for private certificate
+   * authorities).
+   */
+  readonly configLambdaEnvironment?: Record<string, string>;
+
+  /**
+   * Optional Lambda runtime override for the Keycloak config Lambda, for
+   * regions or partitions where the default runtime is not yet available.
+   *
+   * @default Runtime.NODEJS_24_X
+   */
+  readonly configLambdaRuntime?: Runtime;
 
   /**
    * Project name for resource naming.
@@ -480,6 +504,9 @@ export class Dataplane extends Construct {
       securityGroup: configLambdaSecurityGroup,
       keycloakAdminUsername: this.config.KEYCLOAK_ADMIN_USERNAME,
       manageProviderLogGroup: props.manageProviderLogGroup,
+      layers: props.configLambdaLayers,
+      environment: props.configLambdaEnvironment,
+      runtime: props.configLambdaRuntime,
     });
 
     // Conditionally create the per-realm Custom Resource that drives Keycloak

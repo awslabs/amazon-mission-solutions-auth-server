@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Duration, RemovalPolicy, Stack, Validations } from 'aws-cdk-lib';
 import { ISecurityGroup, IVpc, SubnetType } from 'aws-cdk-lib/aws-ec2';
 import { Effect, IRole, PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { CfnFunction, Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { CfnFunction, Code, Function, ILayerVersion, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Provider } from 'aws-cdk-lib/custom-resources';
@@ -50,6 +50,32 @@ export interface KeycloakConfigLambdaProps {
    * responsibility.
    */
   manageProviderLogGroup?: boolean;
+  /**
+   * Optional Lambda layers to attach to the config Lambda.
+   *
+   * Useful for environments that require additional runtime content, such
+   * as a private certificate authority bundle. Pair with
+   * {@link KeycloakConfigLambdaProps.environment} to point Node.js at the
+   * bundle (e.g. `NODE_EXTRA_CA_CERTS=/opt/ca-bundle.pem`).
+   */
+  layers?: ILayerVersion[];
+  /**
+   * Optional additional environment variables for the config Lambda.
+   *
+   * Commonly used with {@link KeycloakConfigLambdaProps.layers} to set
+   * `NODE_EXTRA_CA_CERTS` in environments with private certificate
+   * authorities.
+   */
+  environment?: Record<string, string>;
+  /**
+   * Optional Lambda runtime override for the config Lambda.
+   *
+   * Useful in regions or partitions where the default runtime is not yet
+   * available.
+   *
+   * @default Runtime.NODEJS_24_X
+   */
+  runtime?: Runtime;
 }
 
 /**
@@ -117,7 +143,7 @@ export class KeycloakConfigLambda extends Construct {
 
     this.configFunction = new Function(this, 'Function', {
       functionName: `${this.projectName}-AuthConfigLambdaFunction`,
-      runtime: Runtime.NODEJS_24_X,
+      runtime: props.runtime ?? Runtime.NODEJS_24_X,
       handler: 'index.handler',
       role: this.lambdaRoles.configLambdaRole,
       vpc: props.vpc,
@@ -127,6 +153,8 @@ export class KeycloakConfigLambda extends Construct {
       timeout: Duration.minutes(15),
       memorySize: 256,
       logGroup,
+      ...(props.layers ? { layers: props.layers } : {}),
+      ...(props.environment ? { environment: props.environment } : {}),
     });
 
     // Grant admin secret read to the Lambda role
