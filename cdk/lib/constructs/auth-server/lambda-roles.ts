@@ -2,7 +2,7 @@
  * Copyright 2025 Amazon.com, Inc. or its affiliates.
  */
 
-import { region_info, Validations } from 'aws-cdk-lib';
+import { region_info, Stack, Validations } from 'aws-cdk-lib';
 import {
   Effect,
   IRole,
@@ -98,13 +98,35 @@ export class LambdaRoles extends Construct {
 
     policy.addStatements(vpcPolicyStatement);
 
+    // Allow decrypting Secrets Manager secrets encrypted with a KMS key
+    // (e.g. customer-managed keys, or environments where the default
+    // Secrets Manager key requires an explicit IAM allow). Scoped so the
+    // key can only be used through Secrets Manager in this region.
+    const stack = Stack.of(this);
+    const kmsDecryptStatement = new PolicyStatement({
+      sid: 'KmsDecryptViaSecretsManager',
+      effect: Effect.ALLOW,
+      actions: ['kms:Decrypt'],
+      resources: ['*'],
+      conditions: {
+        StringEquals: {
+          'kms:ViaService': `secretsmanager.${stack.region}.${stack.urlSuffix}`,
+        },
+      },
+    });
+
+    policy.addStatements(kmsDecryptStatement);
+
     role.addManagedPolicy(policy);
 
     // The id carries the granular finding suffix, so only this wildcard is accepted.
     Validations.of(policy).acknowledge({
       id: 'AwsSolutions-IAM5[Resource::*]',
       reason:
-        'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time.',
+        'VPC network interface permissions require wildcard as ENI ARNs are not known at deploy time. ' +
+        'kms:Decrypt also uses a wildcard resource because the Secrets Manager encryption key is not ' +
+        'always known at synth time (AWS-managed keys have no importable construct); the kms:ViaService ' +
+        'condition restricts usage to Secrets Manager in this region.',
     });
 
     return role;
