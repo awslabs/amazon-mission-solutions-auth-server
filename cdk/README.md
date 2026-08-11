@@ -245,6 +245,25 @@ All configuration is managed through a single file: `bin/deployment/deployment.j
 
 This optional section configures Keycloak realms, clients, and users. When provided, a Lambda function is created to automatically configure Keycloak on deployment.
 
+**Config Lambda customization (`DataplaneProps`):**
+
+The configuration Lambda can be adapted to restricted environments through three optional `Dataplane` construct props. Defaults are unchanged when the props are omitted.
+
+| Prop                      | Type              | Description                                                                                                                                      |
+| ------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `configLambdaLayers`      | `ILayerVersion[]` | Lambda layers to attach, e.g. a private certificate authority bundle                                                                             |
+| `configLambdaEnvironment` | `object`          | Additional environment variables, e.g. `NODE_EXTRA_CA_CERTS=/opt/ca-bundle.pem` to trust a private CA. Construct-owned variables take precedence |
+| `configLambdaRuntime`     | `Runtime`         | Runtime override for regions/partitions where the default (`NODEJS_24_X`) is not yet available                                                   |
+
+```ts
+new Dataplane(this, 'Dataplane', {
+  // ...
+  configLambdaLayers: [caBundleLayer],
+  configLambdaEnvironment: { NODE_EXTRA_CA_CERTS: '/opt/ca-bundle.pem' },
+  configLambdaRuntime: Runtime.NODEJS_20_X,
+});
+```
+
 | Field         | Type    | Description                       |
 | ------------- | ------- | --------------------------------- |
 | `realm`       | string  | Realm name                        |
