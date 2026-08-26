@@ -93,6 +93,7 @@ export interface KeycloakRealmConfig {
   clients?: KeycloakClientConfig[];
   users?: KeycloakUserConfig[];
   roles?: KeycloakRolesConfig;
+  clientScopes?: string[];
   [key: string]: unknown;
 }
 
@@ -109,6 +110,8 @@ export interface KeycloakClientConfig {
   postLogoutRedirectUris?: string[];
   attributes?: Record<string, string>;
   enabled?: boolean;
+  defaultClientScopes?: string[];
+  optionalClientScopes?: string[];
   [key: string]: unknown;
 }
 
@@ -162,6 +165,7 @@ export interface VerificationResults {
   clientsCreated: boolean;
   usersCreated: boolean;
   rolesCreated: boolean;
+  clientScopesCreated: boolean;
 }
 
 /** HTTP methods used by makeAuthenticatedRequest. */
@@ -191,5 +195,15 @@ export interface KeycloakUserResponse {
   lastName?: string;
   enabled?: boolean;
   emailVerified?: boolean;
+  [key: string]: unknown;
+}
+
+/** Keycloak client scope as returned by the Keycloak REST API. */
+export interface KeycloakClientScopeResponse {
+  id: string;
+  name: string;
+  protocol?: string;
+  description?: string;
+  attributes?: Record<string, string>;
   [key: string]: unknown;
 }

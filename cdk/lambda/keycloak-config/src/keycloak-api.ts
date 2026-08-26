@@ -11,6 +11,7 @@ import config = require('./config');
 import {
   KeycloakClientConfig,
   KeycloakClientResponse,
+  KeycloakClientScopeResponse,
   KeycloakRealmConfig,
   KeycloakRoleConfig,
   KeycloakUserConfig,
@@ -52,6 +53,13 @@ function getUsersUrl(baseUrl: string, realm: string): string {
  */
 function getRolesUrl(baseUrl: string, realm: string): string {
   return `${getRealmUrl(baseUrl, realm)}/roles`;
+}
+
+/**
+ * Get URL for client scopes in a realm
+ */
+function getClientScopesUrl(baseUrl: string, realm: string): string {
+  return `${getRealmUrl(baseUrl, realm)}/client-scopes`;
 }
 
 /**
@@ -200,7 +208,14 @@ async function updateExistingRealm(
 }
 
 /**
- * Create or update a client
+ * Create or update a client.
+ *
+ * `defaultClientScopes` and `optionalClientScopes` on the config are handled
+ * separately from the base client body: after the client is created or
+ * updated, each named scope is resolved to a realm-level client scope and
+ * attached via Keycloak's dedicated client-scope endpoints. Scope names must
+ * already exist at the realm level (see the realm's `clientScopes`); an
+ * unknown name is a hard error rather than a silent skip.
  */
 async function createOrUpdateClient(
   token: string,
@@ -222,7 +237,16 @@ async function createOrUpdateClient(
 
     console.log(`${clientExists ? 'Updating' : 'Creating'} client: ${clientId} in realm: ${realm}`);
 
-    const { websiteUri, postLogoutRedirectUris, ...cleanClientConfig } = clientConfig;
+    // Scope assignments are managed through dedicated endpoints below, not
+    // through the client body — strip them from the request payload so
+    // Keycloak's client resource doesn't second-guess our assignment calls.
+    const {
+      websiteUri,
+      postLogoutRedirectUris,
+      defaultClientScopes,
+      optionalClientScopes,
+      ...cleanClientConfig
+    } = clientConfig;
     void websiteUri;
 
     cleanClientConfig.attributes = cleanClientConfig.attributes || {};
@@ -240,15 +264,107 @@ async function createOrUpdateClient(
 
     const response = await utils.makeAuthenticatedRequest(method, url, fullConfig, token);
 
-    if (response.status >= 200 && response.status < 300) {
-      console.log(`Successfully ${clientExists ? 'updated' : 'created'} client: ${clientId}`);
-    } else {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`Unexpected status code: ${response.status}`);
+    }
+    console.log(`Successfully ${clientExists ? 'updated' : 'created'} client: ${clientId}`);
+
+    const hasScopeAssignments =
+      (defaultClientScopes && defaultClientScopes.length > 0) ||
+      (optionalClientScopes && optionalClientScopes.length > 0);
+
+    if (hasScopeAssignments) {
+      // Resolve the client UUID for scope assignment. On update we already have
+      // it; on create we need to look it up.
+      let clientUuid: string;
+      if (clientExists) {
+        clientUuid = existingClient!.id;
+      } else {
+        const createdClient = await getClientByClientId(token, keycloakUrl, realm, clientId);
+        if (!createdClient) {
+          throw new Error(`Failed to retrieve client after creation: ${clientId}`);
+        }
+        clientUuid = createdClient.id;
+      }
+
+      if (defaultClientScopes && defaultClientScopes.length > 0) {
+        await assignScopesToClient(
+          token,
+          keycloakUrl,
+          realm,
+          clientId,
+          clientUuid,
+          defaultClientScopes,
+          'default',
+        );
+      }
+
+      if (optionalClientScopes && optionalClientScopes.length > 0) {
+        await assignScopesToClient(
+          token,
+          keycloakUrl,
+          realm,
+          clientId,
+          clientUuid,
+          optionalClientScopes,
+          'optional',
+        );
+      }
     }
   } catch (error) {
     const errorMessage = utils.formatError(error);
     console.error(`Failed to ${clientExists ? 'update' : 'create'} client: ${errorMessage}`);
     throw error;
+  }
+}
+
+/**
+ * Attach a set of realm-level client scopes to a client as either default or
+ * optional scopes.
+ *
+ * Each name must resolve to an existing realm-level client scope; if any name
+ * is not found this function throws before any attachment call is made,
+ * pointing the caller at the realm's `clientScopes` list where the scope must
+ * be declared first.
+ */
+async function assignScopesToClient(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  clientId: string,
+  clientUuid: string,
+  scopeNames: string[],
+  scopeType: 'default' | 'optional',
+): Promise<void> {
+  const segment = scopeType === 'default' ? 'default-client-scopes' : 'optional-client-scopes';
+
+  // Resolve every name first so a missing scope fails fast without leaving a
+  // partial assignment behind.
+  const resolvedScopes: Array<{ name: string; id: string }> = [];
+  for (const scopeName of scopeNames) {
+    const scope = await getClientScopeByName(token, keycloakUrl, realm, scopeName);
+    if (!scope) {
+      throw new Error(
+        `Client "${clientId}" references ${scopeType} client scope "${scopeName}" ` +
+          `which is not defined at the realm level. Add "${scopeName}" to the realm's ` +
+          `clientScopes list before referencing it on a client.`,
+      );
+    }
+    resolvedScopes.push({ name: scopeName, id: scope.id });
+  }
+
+  const clientsUrl = getClientsUrl(keycloakUrl, realm);
+  for (const { name, id } of resolvedScopes) {
+    const url = `${clientsUrl}/${clientUuid}/${segment}/${id}`;
+    console.log(`Attaching ${scopeType} client scope "${name}" (${id}) to client "${clientId}"`);
+
+    const response = await utils.makeAuthenticatedRequest('put', url, null, token);
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(
+        `Unexpected status code when attaching ${scopeType} scope "${name}" to client "${clientId}": ${response.status}`,
+      );
+    }
+    console.log(`Attached ${scopeType} client scope "${name}" to client "${clientId}"`);
   }
 }
 
@@ -453,6 +569,110 @@ async function createOrUpdateRole(
 }
 
 /**
+ * Get a realm-level client scope by its name.
+ *
+ * Keycloak's `GET /admin/realms/{realm}/client-scopes` returns all scopes; we
+ * filter locally by name since the API does not accept a name query parameter.
+ */
+async function getClientScopeByName(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  name: string,
+): Promise<KeycloakClientScopeResponse | null> {
+  try {
+    const url = getClientScopesUrl(keycloakUrl, realm);
+    console.log(`Getting client scope by name: ${name} in realm: ${realm}`);
+
+    const response = await utils.makeAuthenticatedRequest('get', url, null, token);
+
+    if (response.status === 200 && Array.isArray(response.data)) {
+      const scopes = response.data as KeycloakClientScopeResponse[];
+      const match = scopes.find(scope => scope.name === name);
+      if (match) {
+        console.log(`Found client scope: ${name}`);
+        return match;
+      }
+    }
+
+    console.log(`Client scope not found: ${name}`);
+    return null;
+  } catch (error) {
+    const errorMessage = utils.formatError(error);
+    console.error(`Error getting client scope: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * Create or update a realm-level client scope.
+ *
+ * Scopes are identified by name and created with the `openid-connect` protocol.
+ * If a scope with the same name already exists the existing definition is
+ * merged with the request body and PUT back — updating by name alone is a
+ * no-op today but preserves the create-or-update pattern used for other
+ * resources and leaves room for scope-level properties to be added later.
+ */
+async function createOrUpdateClientScope(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  scopeName: string,
+): Promise<void> {
+  let scopeExists = false;
+
+  try {
+    const existingScope = await getClientScopeByName(token, keycloakUrl, realm, scopeName);
+    scopeExists = !!existingScope;
+
+    const scopesUrl = getClientScopesUrl(keycloakUrl, realm);
+    const method = scopeExists ? ('put' as const) : ('post' as const);
+    const url = scopeExists ? `${scopesUrl}/${existingScope!.id}` : scopesUrl;
+
+    console.log(
+      `${scopeExists ? 'Updating' : 'Creating'} client scope: ${scopeName} in realm: ${realm}`,
+    );
+
+    const scopeBody: Record<string, unknown> = {
+      name: scopeName,
+      protocol: 'openid-connect',
+    };
+    const fullBody = scopeExists ? { ...existingScope, ...scopeBody } : scopeBody;
+
+    const response = await utils.makeAuthenticatedRequest(method, url, fullBody, token);
+
+    if (response.status >= 200 && response.status < 300) {
+      console.log(`Successfully ${scopeExists ? 'updated' : 'created'} client scope: ${scopeName}`);
+    } else {
+      throw new Error(`Unexpected status code: ${response.status}`);
+    }
+  } catch (error) {
+    const errorMessage = utils.formatError(error);
+    console.error(`Failed to ${scopeExists ? 'update' : 'create'} client scope: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * Verify if a realm-level client scope exists
+ */
+async function verifyClientScopeExists(
+  token: string,
+  keycloakUrl: string,
+  realm: string,
+  scopeName: string,
+): Promise<boolean> {
+  try {
+    const scope = await getClientScopeByName(token, keycloakUrl, realm, scopeName);
+    return !!scope;
+  } catch (error) {
+    const errorMessage = utils.formatError(error);
+    console.error(`Error verifying client scope: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
  * Verify if a realm exists
  */
 async function verifyRealmExists(
@@ -546,11 +766,14 @@ export = {
   createOrUpdateClient,
   createOrUpdateUser,
   createOrUpdateRole,
+  createOrUpdateClientScope,
   verifyRealmExists,
   verifyClientExists,
   verifyUserExists,
   verifyRoleExists,
+  verifyClientScopeExists,
   getClientByClientId,
+  getClientScopeByName,
   getUserByUsername,
   setUserPassword,
 };

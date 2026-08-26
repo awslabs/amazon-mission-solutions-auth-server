@@ -34,6 +34,8 @@ export interface KeycloakClient {
   redirectUris?: string[];
   postLogoutRedirectUris?: string[];
   webOrigins?: string[];
+  defaultClientScopes?: string[];
+  optionalClientScopes?: string[];
 }
 
 export interface KeycloakRole {
@@ -49,6 +51,7 @@ export interface KeycloakCustomConfig {
   realm: string;
   enabled: boolean;
   displayName?: string;
+  clientScopes?: string[];
   clients: KeycloakClient[];
   users: KeycloakUser[];
   roles?: KeycloakRolesConfig;
