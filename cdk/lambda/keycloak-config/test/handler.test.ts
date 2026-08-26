@@ -100,6 +100,10 @@ function setupHappyPath() {
   keycloakApi.createOrUpdateRole.mockResolvedValue(undefined);
   keycloakApi.verifyRoleExists.mockResolvedValue(true);
 
+  // client scopes
+  keycloakApi.createOrUpdateClientScope.mockResolvedValue(undefined);
+  keycloakApi.verifyClientScopeExists.mockResolvedValue(true);
+
   // validation
   configValidation.performValidation.mockResolvedValue({
     allValid: true,

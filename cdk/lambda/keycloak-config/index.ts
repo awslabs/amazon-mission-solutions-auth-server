@@ -84,6 +84,7 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
     clientsCreated: false,
     usersCreated: false,
     rolesCreated: false,
+    clientScopesCreated: false,
   };
 
   // Step 1: Create or update the realm with retry for 500 errors
@@ -130,7 +131,38 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
     throw new Error(`Failed to create/verify realm: ${errorDetails}`);
   }
 
-  // Step 2: Process clients from configuration
+  // Step 2: Process client scopes in the realm configuration (optional).
+  // Client scopes must exist before clients are created so that clients can
+  // reference them at creation time.
+  console.log('Creating/updating client scopes...');
+  try {
+    if (authConfig.clientScopes && authConfig.clientScopes.length > 0) {
+      for (const scopeName of authConfig.clientScopes) {
+        await keycloakApi.createOrUpdateClientScope(accessToken, keycloakUrl, realmName, scopeName);
+
+        const scopeExists = await keycloakApi.verifyClientScopeExists(
+          accessToken,
+          keycloakUrl,
+          realmName,
+          scopeName,
+        );
+        if (!scopeExists) {
+          throw new Error(`Failed to verify client scope "${scopeName}" was created`);
+        }
+        console.log(`Verified client scope "${scopeName}" exists`);
+      }
+      verificationResults.clientScopesCreated = true;
+    } else {
+      console.log('No client scopes defined in configuration');
+      verificationResults.clientScopesCreated = true;
+    }
+  } catch (error) {
+    console.error('Error creating/verifying client scopes:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to create/verify client scopes: ${message}`);
+  }
+
+  // Step 3: Process clients from configuration
   console.log('Creating/updating clients...');
   try {
     if (authConfig.clients && authConfig.clients.length > 0) {
@@ -159,7 +191,7 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
     throw new Error(`Failed to create/verify clients: ${message}`);
   }
 
-  // Step 3: Process users from configuration
+  // Step 4: Process users from configuration
   console.log('Creating/updating users...');
   try {
     if (authConfig.users && authConfig.users.length > 0) {
@@ -198,7 +230,7 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
     throw new Error(`Failed to create/verify users: ${message}`);
   }
 
-  // Step 4: Process roles in the realm configuration (optional)
+  // Step 5: Process roles in the realm configuration (optional)
   console.log('Creating/updating roles...');
   try {
     if (authConfig.roles && authConfig.roles.realm && authConfig.roles.realm.length > 0) {
@@ -231,9 +263,10 @@ exports.handler = async (event: CloudFormationCustomResourceEvent): Promise<Prov
   if (
     !verificationResults.realmCreated ||
     !verificationResults.clientsCreated ||
-    !verificationResults.usersCreated
+    !verificationResults.usersCreated ||
+    !verificationResults.clientScopesCreated
   ) {
-    const errorMsg = `Configuration verification failed: Realm created: ${verificationResults.realmCreated}, Clients created: ${verificationResults.clientsCreated}, Users created: ${verificationResults.usersCreated}`;
+    const errorMsg = `Configuration verification failed: Realm created: ${verificationResults.realmCreated}, Clients created: ${verificationResults.clientsCreated}, Users created: ${verificationResults.usersCreated}, Client scopes created: ${verificationResults.clientScopesCreated}`;
     console.error(errorMsg);
     throw new Error(errorMsg);
   }

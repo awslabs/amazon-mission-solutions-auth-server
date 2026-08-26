@@ -22,9 +22,12 @@ const {
   getUserByUsername,
   setUserPassword,
   createOrUpdateRole,
+  createOrUpdateClientScope,
+  getClientScopeByName,
   verifyClientExists,
   verifyUserExists,
   verifyRoleExists,
+  verifyClientScopeExists,
 } = require('../src/keycloak-api');
 
 const TOKEN = 'test-access-token';
@@ -314,6 +317,150 @@ describe('keycloak-api', () => {
       await expect(
         createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, { clientId: 'my-client' }),
       ).rejects.toThrow('request failed');
+    });
+
+    test('strips defaultClientScopes/optionalClientScopes from client body', async () => {
+      const scope = { id: 'scope-uuid', name: 'my-scope' };
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] }) // getClientByClientId (not found)
+        .mockResolvedValueOnce({ status: 201 }) // create client
+        .mockResolvedValueOnce({
+          // getClientByClientId after create (for UUID lookup)
+          status: 200,
+          data: [{ id: 'client-uuid', clientId: 'my-client' }],
+        })
+        .mockResolvedValueOnce({ status: 200, data: [scope] }) // getClientScopeByName
+        .mockResolvedValueOnce({ status: 204 }); // attach default scope
+
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+        clientId: 'my-client',
+        defaultClientScopes: ['my-scope'],
+      });
+
+      const [, , body] = utils.makeAuthenticatedRequest.mock.calls[1];
+      expect(body.defaultClientScopes).toBeUndefined();
+      expect(body.optionalClientScopes).toBeUndefined();
+    });
+
+    test('attaches default client scopes via dedicated endpoint on create', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 201 })
+        .mockResolvedValueOnce({
+          status: 200,
+          data: [{ id: 'client-uuid', clientId: 'my-client' }],
+        })
+        .mockResolvedValueOnce({ status: 200, data: [{ id: 'scope-uuid', name: 'scope-a' }] })
+        .mockResolvedValueOnce({ status: 204 });
+
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+        clientId: 'my-client',
+        defaultClientScopes: ['scope-a'],
+      });
+
+      const [method, url] = utils.makeAuthenticatedRequest.mock.calls[4];
+      expect(method).toBe('put');
+      expect(url).toContain(`/clients/client-uuid/default-client-scopes/scope-uuid`);
+    });
+
+    test('attaches optional client scopes via dedicated endpoint on update', async () => {
+      const existingClient = { id: 'client-uuid', clientId: 'my-client' };
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [existingClient] }) // getClientByClientId (exists)
+        .mockResolvedValueOnce({ status: 204 }) // update client
+        .mockResolvedValueOnce({ status: 200, data: [{ id: 'scope-uuid', name: 'scope-b' }] })
+        .mockResolvedValueOnce({ status: 204 });
+
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+        clientId: 'my-client',
+        optionalClientScopes: ['scope-b'],
+      });
+
+      const [method, url] = utils.makeAuthenticatedRequest.mock.calls[3];
+      expect(method).toBe('put');
+      expect(url).toContain('client-uuid/optional-client-scopes/scope-uuid');
+    });
+
+    test('attaches both default and optional scopes when both are provided', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 201 })
+        .mockResolvedValueOnce({
+          status: 200,
+          data: [{ id: 'client-uuid', clientId: 'my-client' }],
+        })
+        // default scope lookup + attach
+        .mockResolvedValueOnce({ status: 200, data: [{ id: 'default-id', name: 'default-scope' }] })
+        .mockResolvedValueOnce({ status: 204 })
+        // optional scope lookup + attach
+        .mockResolvedValueOnce({
+          status: 200,
+          data: [{ id: 'optional-id', name: 'optional-scope' }],
+        })
+        .mockResolvedValueOnce({ status: 204 });
+
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+        clientId: 'my-client',
+        defaultClientScopes: ['default-scope'],
+        optionalClientScopes: ['optional-scope'],
+      });
+
+      const defaultCall = utils.makeAuthenticatedRequest.mock.calls[4];
+      const optionalCall = utils.makeAuthenticatedRequest.mock.calls[6];
+      expect(defaultCall[1]).toContain('default-client-scopes/default-id');
+      expect(optionalCall[1]).toContain('optional-client-scopes/optional-id');
+    });
+
+    test('throws when default scope is not defined at realm level', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 201 })
+        .mockResolvedValueOnce({
+          status: 200,
+          data: [{ id: 'client-uuid', clientId: 'my-client' }],
+        })
+        // scope lookup returns no matching scope
+        .mockResolvedValueOnce({ status: 200, data: [{ id: 'other', name: 'other-scope' }] });
+
+      await expect(
+        createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+          clientId: 'my-client',
+          defaultClientScopes: ['missing-scope'],
+        }),
+      ).rejects.toThrow(/"missing-scope".*not defined at the realm level/);
+    });
+
+    test('throws when optional scope is not defined at realm level', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 201 })
+        .mockResolvedValueOnce({
+          status: 200,
+          data: [{ id: 'client-uuid', clientId: 'my-client' }],
+        })
+        .mockResolvedValueOnce({ status: 200, data: [] });
+
+      await expect(
+        createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+          clientId: 'my-client',
+          optionalClientScopes: ['missing'],
+        }),
+      ).rejects.toThrow(/"missing".*not defined at the realm level/);
+    });
+
+    test('does not attach anything when scope arrays are empty', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 201 });
+
+      await createOrUpdateClient(TOKEN, KEYCLOAK_URL, REALM, {
+        clientId: 'my-client',
+        defaultClientScopes: [],
+        optionalClientScopes: [],
+      });
+
+      // Only two calls: lookup + create. No UUID lookup, no attach.
+      expect(utils.makeAuthenticatedRequest).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -642,6 +789,118 @@ describe('keycloak-api', () => {
     test('throws on errors', async () => {
       utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
       await expect(verifyRoleExists(TOKEN, KEYCLOAK_URL, REALM, 'role')).rejects.toThrow(
+        'server error',
+      );
+    });
+  });
+
+  describe('getClientScopeByName', () => {
+    test('returns scope when found by name', async () => {
+      const scope = { id: 'scope-1', name: 'my-scope', protocol: 'openid-connect' };
+      utils.makeAuthenticatedRequest.mockResolvedValue({
+        status: 200,
+        data: [{ id: 'other', name: 'other-scope' }, scope],
+      });
+      const result = await getClientScopeByName(TOKEN, KEYCLOAK_URL, REALM, 'my-scope');
+      expect(result).toEqual(scope);
+      const [method, url] = utils.makeAuthenticatedRequest.mock.calls[0];
+      expect(method).toBe('get');
+      expect(url).toContain(`/realms/${REALM}/client-scopes`);
+    });
+
+    test('returns null when not found (empty array)', async () => {
+      utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
+      const result = await getClientScopeByName(TOKEN, KEYCLOAK_URL, REALM, 'missing');
+      expect(result).toBeNull();
+    });
+
+    test('returns null when name does not match any scope', async () => {
+      utils.makeAuthenticatedRequest.mockResolvedValue({
+        status: 200,
+        data: [{ id: 'a', name: 'not-mine' }],
+      });
+      const result = await getClientScopeByName(TOKEN, KEYCLOAK_URL, REALM, 'my-scope');
+      expect(result).toBeNull();
+    });
+
+    test('throws on errors', async () => {
+      utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
+      await expect(getClientScopeByName(TOKEN, KEYCLOAK_URL, REALM, 'x')).rejects.toThrow(
+        'server error',
+      );
+    });
+  });
+
+  describe('createOrUpdateClientScope', () => {
+    test('creates new scope (POST) with openid-connect protocol when not found', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] }) // getClientScopeByName
+        .mockResolvedValueOnce({ status: 201 }); // create
+
+      await createOrUpdateClientScope(TOKEN, KEYCLOAK_URL, REALM, 'my-scope');
+
+      const [method, url, data] = utils.makeAuthenticatedRequest.mock.calls[1];
+      expect(method).toBe('post');
+      expect(url).toContain(`/realms/${REALM}/client-scopes`);
+      expect(data).toMatchObject({ name: 'my-scope', protocol: 'openid-connect' });
+    });
+
+    test('updates existing scope (PUT) when scope exists', async () => {
+      const existing = { id: 'scope-uuid', name: 'my-scope', protocol: 'openid-connect' };
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [existing] }) // getClientScopeByName
+        .mockResolvedValueOnce({ status: 204 }); // update
+
+      await createOrUpdateClientScope(TOKEN, KEYCLOAK_URL, REALM, 'my-scope');
+
+      const [method, url, data] = utils.makeAuthenticatedRequest.mock.calls[1];
+      expect(method).toBe('put');
+      expect(url).toContain('scope-uuid');
+      expect(data.name).toBe('my-scope');
+      // Existing fields are preserved on update
+      expect(data.id).toBe('scope-uuid');
+    });
+
+    test('throws on non-2xx response', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockResolvedValueOnce({ status: 400 });
+
+      await expect(
+        createOrUpdateClientScope(TOKEN, KEYCLOAK_URL, REALM, 'bad-scope'),
+      ).rejects.toThrow('Unexpected status code: 400');
+    });
+
+    test('throws on request error', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200, data: [] })
+        .mockRejectedValueOnce(new Error('network error'));
+
+      await expect(
+        createOrUpdateClientScope(TOKEN, KEYCLOAK_URL, REALM, 'my-scope'),
+      ).rejects.toThrow('network error');
+    });
+  });
+
+  describe('verifyClientScopeExists', () => {
+    test('returns true when scope found', async () => {
+      utils.makeAuthenticatedRequest.mockResolvedValue({
+        status: 200,
+        data: [{ id: 's1', name: 'my-scope' }],
+      });
+      const result = await verifyClientScopeExists(TOKEN, KEYCLOAK_URL, REALM, 'my-scope');
+      expect(result).toBe(true);
+    });
+
+    test('returns false when scope not found', async () => {
+      utils.makeAuthenticatedRequest.mockResolvedValue({ status: 200, data: [] });
+      const result = await verifyClientScopeExists(TOKEN, KEYCLOAK_URL, REALM, 'missing');
+      expect(result).toBe(false);
+    });
+
+    test('throws on error', async () => {
+      utils.makeAuthenticatedRequest.mockRejectedValue(new Error('server error'));
+      await expect(verifyClientScopeExists(TOKEN, KEYCLOAK_URL, REALM, 'scope')).rejects.toThrow(
         'server error',
       );
     });
