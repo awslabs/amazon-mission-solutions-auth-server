@@ -36,7 +36,7 @@
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "fast-check": "^4.5.3",
-    "globals": "^17.7.0",
+    "globals": "^17.11.0",
     "jest": "^30.0.5",
     "jose": "^5.10.0",
     "prettier": "^3.9.6",
