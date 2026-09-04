@@ -141,6 +141,21 @@ describe('keycloak-api', () => {
       expect(method).toBe('put');
     });
 
+    test('excludes clientScopes from update request even if present in realmConfig', async () => {
+      utils.makeAuthenticatedRequest
+        .mockResolvedValueOnce({ status: 200 }) // verifyRealmExists
+        .mockResolvedValueOnce({ status: 204 }); // update realm (PUT)
+
+      await createOrUpdateRealmWithConfig(TOKEN, KEYCLOAK_URL, REALM, {
+        displayName: 'Updated Realm',
+        clientScopes: [{ name: 'scope-1' }, { name: 'scope-2' }],
+      });
+
+      const [method, , data] = utils.makeAuthenticatedRequest.mock.calls[1];
+      expect(method).toBe('put');
+      expect(data).not.toHaveProperty('clientScopes');
+    });
+
     test('uses displayName from config when provided', async () => {
       utils.makeAuthenticatedRequest
         .mockResolvedValueOnce({ status: 404 })

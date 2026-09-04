@@ -183,7 +183,9 @@ async function updateExistingRealm(
     };
 
     const realmProperties = Object.fromEntries(
-      Object.entries(realmConfig).filter(([key]) => key !== 'clients' && key !== 'users'),
+      Object.entries(realmConfig).filter(
+        ([key]) => key !== 'clients' && key !== 'users' && key !== 'clientScopes',
+      ),
     );
     const updateConfig = { ...baseConfig, ...realmProperties };
 
