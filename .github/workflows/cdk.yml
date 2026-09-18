@@ -112,7 +112,7 @@ jobs:
         # Critical/High/Medium/Low levels and omits suppressed findings, so
         # GitHub's Code scanning tab only surfaces actionable alerts.
         if: always() && hashFiles('.ash/ash_output/reports/ash.ghas.sarif') != ''
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: .ash/ash_output/reports/ash.ghas.sarif
           category: ash
