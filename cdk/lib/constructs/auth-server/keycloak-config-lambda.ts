@@ -213,7 +213,7 @@ export class KeycloakConfigLambda extends Construct {
       reason:
         'The Provider framework Lambda runtime is managed by CDK and may not use the latest runtime version.',
     });
-       
+
     // Pinned default runtime; the newest one may not be in every partition yet.
     Validations.of(this.configFunction).acknowledge({
       id: 'AwsSolutions-L1',
