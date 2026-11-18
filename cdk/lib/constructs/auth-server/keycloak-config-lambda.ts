@@ -213,6 +213,13 @@ export class KeycloakConfigLambda extends Construct {
       reason:
         'The Provider framework Lambda runtime is managed by CDK and may not use the latest runtime version.',
     });
+       
+    // Pinned default runtime; the newest one may not be in every partition yet.
+    Validations.of(this.configFunction).acknowledge({
+      id: 'AwsSolutions-L1',
+      reason:
+        'The config Lambda runtime is pinned and can be overridden with the runtime prop; the newest runtime may not be available in every region or partition.',
+    });
 
     // grantInvoke on the config function produces '<FnLogicalId>.Arn:*' — the ':*'
     // covers the function's version/alias qualifiers, which is how the CDK Provider
